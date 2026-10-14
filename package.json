@@ -10,5 +10,20 @@
     "ios": "expo start --ios",
     "test": "node --experimental-strip-types --no-warnings --test 'src/domain/__tests__/*.test.ts'",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@types/react": "~19.2.4",
+    "expo": "^57.0.29",
+    "expo-constants": "~57.0.22",
+    "expo-linking": "~57.0.13",
+    "expo-router": "~57.0.27",
+    "expo-sqlite": "~57.0.4",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
+    "typescript": "~6.0.3"
   }
 }

@@ -13,14 +13,14 @@ npm run typecheck
 
 ## Decisions
 
-| Area | Choice | Why |
-| --- | --- | --- |
-| Model | AI-only, self-serve | No coach; plans must be safe without human review |
-| App | Expo (React Native) + Expo Router | One codebase for Android/iOS, web later |
-| Data | On-device SQLite (`expo-sqlite`) | Free, offline, private; no server to run |
-| Plan engine | Deterministic templates scaled to calorie targets | AI is bad at arithmetic; plans must add up |
-| AI (later) | Gemini behind a tiny proxy | Photo/voice → food items the user confirms; API key never ships in the app |
-| Units | Household measures (roti, katori, glass) | How Indian families actually count food |
+| Area        | Choice                                            | Why                                                                        |
+| ----------- | ------------------------------------------------- | -------------------------------------------------------------------------- |
+| Model       | AI-only, self-serve                               | No coach; plans must be safe without human review                          |
+| App         | Expo (React Native) + Expo Router                 | One codebase for Android/iOS, web later                                    |
+| Data        | On-device SQLite (`expo-sqlite`)                  | Free, offline, private; no server to run                                   |
+| Plan engine | Deterministic templates scaled to calorie targets | AI is bad at arithmetic; plans must add up                                 |
+| AI (later)  | Gemini behind a tiny proxy                        | Photo/voice → food items the user confirms; API key never ships in the app |
+| Units       | Household measures (roti, katori, glass)          | How Indian families actually count food                                    |
 
 Safety rules built into `src/domain/energy.ts`: Mifflin-St Jeor BMR, deficit capped at 25% of maintenance, floor of 1200 kcal (women) / 1500 kcal (men), adults 18–80 only.
 

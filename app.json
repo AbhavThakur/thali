@@ -6,8 +6,16 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "plugins": ["expo-router"],
-    "android": { "package": "com.family.thali" },
-    "ios": { "bundleIdentifier": "com.family.thali" }
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-status-bar"
+    ],
+    "android": {
+      "package": "com.family.thali"
+    },
+    "ios": {
+      "bundleIdentifier": "com.family.thali"
+    }
   }
 }
