@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Thali",
+    "slug": "thali",
+    "scheme": "thali",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-router"],
+    "android": { "package": "com.family.thali" },
+    "ios": { "bundleIdentifier": "com.family.thali" }
+  }
+}

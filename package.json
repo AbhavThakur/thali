@@ -1,0 +1,14 @@
+{
+  "name": "thali",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "setup": "npm install expo@latest && npx expo install expo-router expo-sqlite expo-linking expo-constants expo-status-bar react-native-svg react-native-safe-area-context react-native-screens react react-native && npx expo install typescript @types/react -- --save-dev",
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "test": "node --experimental-strip-types --no-warnings --test 'src/domain/__tests__/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  }
+}
