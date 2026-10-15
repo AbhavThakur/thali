@@ -44,6 +44,17 @@ Sign-in without email (optional): turn on Authentication → Sign In / Providers
 
 Keeping the free project awake: Supabase pauses free projects after 7 days without activity. `.github/workflows/supabase-keepalive.yml` pings the database every Monday and Thursday. Push the repo to GitHub, then add two repository secrets (Settings → Secrets and variables → Actions): `SUPABASE_URL` and `SUPABASE_ANON_KEY`. Run it once from the Actions tab to check it passes. GitHub stops scheduled runs after 60 days with no commits on public repos, so make a commit now and then, or use a private repo.
 
+## Updating the app without losing data
+
+Installing a new APK over the old one keeps everything (the database lives in the app's private storage). That only holds if:
+
+- **Same package and signing key.** The package is `com.family.thali`; the release APK is signed with the standard debug key that every `expo prebuild` regenerates (SHA1 `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`). If either changes, Android refuses the update and the only way in is uninstalling, which deletes the data. Don't change `android.package`, and move to a private keystore only together with a cloud backup.
+- **`android.versionCode` goes up** in `app.json` for every APK you hand out (Android refuses a lower number).
+- **Never uninstall or "Clear storage"** to update. Expo Go and the APK keep separate data, so data made in Expo Go does not appear in the APK; use cloud backup or Export backup to move it.
+- **Database changes only add things.** New tables and columns go in a new `if (version < N)` step in `migrate()` (`src/db/db.ts`), never a drop or rewrite. `npm test` runs the real migration against every old database version (`src/domain/__tests__/migrate.test.ts`); add the new version to its history when you add a step.
+
+Before any update, Me → Cloud backup → Back up now is a cheap safety net.
+
 ## Family (optional)
 
 Everyone installs Thali on their own phone, signs in to the cloud (email or recovery code) and joins one family with an 8-letter invite code (Family tab). Members see each other's streak, stars, meals logged today and a weekly "everyone logs 5 days" goal, and can send cheers. Only a small daily summary is shared, never foods or calories; weight is shared only if that person turns on "Share my weight" (off by default, and removing the switch deletes it). Needs the latest `supabase/schema.sql` run once (safe to run again). All writes go through database functions; the tables are read-only for the app, and RLS limits reads to your own family. Push notifications are not built; cheers show as a badge on the Family tab.

@@ -1,12 +1,11 @@
-import { openDatabaseAsync } from "expo-sqlite";
 import Storage from "./kv";
+import { withDb } from "./dbAccess.ts";
 import {
   getAllLogs,
   getProfile,
   getWaterHistory,
   getWeights,
   loadCustomFoods,
-  migrate,
   today,
 } from "../db/db.ts";
 import { CloudError } from "../domain/cloud.ts";
@@ -92,13 +91,9 @@ async function publishNow(people: People) {
   const person =
     people.list.find((p) => p.id === me.profileKey) ?? people.list[0];
   const session = await freshSession();
-  const db = await openDatabaseAsync(person.dbName);
-  let days: FamilyDay[];
-  let streak: number;
-  try {
-    await migrate(db);
+  const built = await withDb(person.dbName, async (db) => {
     const profile = await getProfile(db);
-    if (!profile) return;
+    if (!profile) return null;
     await loadCustomFoods(db);
     const [logs, water, weights] = await Promise.all([
       getAllLogs(db),
@@ -107,22 +102,24 @@ async function publishNow(people: People) {
     ]);
     const to = today();
     const target = macroTargets(profile, calorieTarget(profile).kcal);
-    days = toFamilyDays(
-      buildHistory(
-        { logs, water, weights, target },
-        shiftDate(to, -(PUBLISH_DAYS - 1)),
+    return {
+      days: toFamilyDays(
+        buildHistory(
+          { logs, water, weights, target },
+          shiftDate(to, -(PUBLISH_DAYS - 1)),
+          to,
+        ),
+        WATER_GOAL,
+        me.shareWeight,
+      ),
+      streak: loggingStreak(
+        logs.map((l) => l.date),
         to,
       ),
-      WATER_GOAL,
-      me.shareWeight,
-    );
-    streak = loggingStreak(
-      logs.map((l) => l.date),
-      to,
-    );
-  } finally {
-    await db.closeAsync();
-  }
+    };
+  });
+  if (!built) return;
+  const { days, streak } = built;
   const cloud = getCloud();
   await cloud.updateMember(session, {
     name: me.name,

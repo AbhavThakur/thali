@@ -1,6 +1,6 @@
-import { openDatabaseAsync } from "expo-sqlite";
 import Storage from "./kv";
-import { exportBackup, importBackup, migrate } from "../db/db.ts";
+import { withDb } from "./dbAccess.ts";
+import { exportBackup, importBackup } from "../db/db.ts";
 import {
   CloudError,
   createCloud,
@@ -106,15 +106,10 @@ export async function freshSession(): Promise<CloudSession> {
 export async function backupAll(people: People): Promise<number> {
   const cloud = getCloud();
   const session = await freshSession();
-  for (const p of people.list) {
-    const db = await openDatabaseAsync(p.dbName);
-    try {
-      await migrate(db);
+  for (const p of people.list)
+    await withDb(p.dbName, async (db) => {
       await cloud.upload(session, p.id, p.name, await exportBackup(db));
-    } finally {
-      await db.closeAsync();
-    }
-  }
+    });
   Storage.setItemSync(LAST_KEY, String(Date.now()));
   return people.list.length;
 }
@@ -135,14 +130,10 @@ export async function restoreAll(
     next = withPerson;
     const person = next.list.find((p) => p.id === row.profileKey);
     if (!person) continue;
-    const db = await openDatabaseAsync(person.dbName);
-    try {
-      await migrate(db);
+    await withDb(person.dbName, async (db) => {
       await importBackup(db, JSON.stringify(full.data));
-      restored++;
-    } finally {
-      await db.closeAsync();
-    }
+    });
+    restored++;
   }
   return { people: next, restored };
 }

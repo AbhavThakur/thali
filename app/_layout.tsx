@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { loadCustomFoods, migrate } from "../src/db/db.ts";
 import { autoBackupIfDue } from "../src/ui/cloudSync.ts";
 import { publishFamily } from "../src/ui/familySync.ts";
+import { registerActiveDb } from "../src/ui/dbAccess.ts";
 import { Loading } from "../src/ui/Loading.tsx";
 import { syncReminders } from "../src/ui/notifications.ts";
 import { PeopleProvider, usePeople } from "../src/ui/People.tsx";
@@ -59,7 +60,10 @@ function FoodsGate({ children }: { children: ReactNode }) {
 
 /** Backs up to the cloud about once a day (if switched on) and shares the family summary. */
 function AutoBackup() {
-  const { people } = usePeople();
+  const { people, person } = usePeople();
+  const db = useSQLiteContext();
+  // Cloud backup and family sharing reuse this open connection; web refuses a second one.
+  useEffect(() => registerActiveDb(person.dbName, db), [person.dbName, db]);
   useEffect(() => {
     void autoBackupIfDue(people);
     void publishFamily(people);
