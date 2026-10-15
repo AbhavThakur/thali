@@ -53,7 +53,10 @@ test("emails and codes are checked before any request", () => {
 
 test("recovery codes are normalised, checked and shown in groups of four", () => {
   const raw = "a1b2c3d4e5f6a7b8c9d0e1f2";
-  assert.equal(normalizeRecoveryCode("a1b2-c3d4 e5f6-A7B8-C9D0-E1F2"), raw.toUpperCase());
+  assert.equal(
+    normalizeRecoveryCode("a1b2-c3d4 e5f6-A7B8-C9D0-E1F2"),
+    raw.toUpperCase(),
+  );
   assert.ok(isRecoveryCode("A1B2-C3D4-E5F6-A7B8-C9D0-E1F2"));
   assert.ok(!isRecoveryCode("A1B2-C3D4"));
   assert.ok(!isRecoveryCode("ZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZ"));
@@ -62,7 +65,14 @@ test("recovery codes are normalised, checked and shown in groups of four", () =>
 
 test("signing in without email posts an empty sign-up and returns an email-less session", async () => {
   const { f, calls } = fake([
-    { body: { access_token: "AT", refresh_token: "RT", expires_in: 3600, user: { email: "" } } },
+    {
+      body: {
+        access_token: "AT",
+        refresh_token: "RT",
+        expires_in: 3600,
+        user: { email: "" },
+      },
+    },
   ]);
   const s = await createCloud(cfg, f, () => 0).signInAnonymously();
   assert.equal(calls[0].url, "https://x.supabase.co/auth/v1/signup");
@@ -72,7 +82,9 @@ test("signing in without email posts an empty sign-up and returns an email-less 
 });
 
 test("anonymous sign-in switched off in Supabase gives a helpful message", async () => {
-  const { f } = fake([{ status: 422, body: { msg: "Anonymous sign-ins are disabled" } }]);
+  const { f } = fake([
+    { status: 422, body: { msg: "Anonymous sign-ins are disabled" } },
+  ]);
   await assert.rejects(
     createCloud(cfg, f).signInAnonymously(),
     (e: CloudError) => /anonymous sign-ins/i.test(e.message),
@@ -88,15 +100,26 @@ test("the recovery code comes from the server and is normalised", async () => {
 });
 
 test("claiming a code sends only the normalised code, and a wrong one is friendly", async () => {
-  const { f, calls } = fake([{ body: 2 }, { status: 400, body: { message: "invalid recovery code" } }]);
+  const { f, calls } = fake([
+    { body: 2 },
+    { status: 400, body: { message: "invalid recovery code" } },
+  ]);
   const cloud = createCloud(cfg, f);
-  assert.equal(await cloud.claimRecoveryCode(session, "a1b2-c3d4-e5f6-a7b8-c9d0-e1f2"), 2);
-  assert.deepEqual(JSON.parse(calls[0].body!), { code: "A1B2C3D4E5F6A7B8C9D0E1F2" });
+  assert.equal(
+    await cloud.claimRecoveryCode(session, "a1b2-c3d4-e5f6-a7b8-c9d0-e1f2"),
+    2,
+  );
+  assert.deepEqual(JSON.parse(calls[0].body!), {
+    code: "A1B2C3D4E5F6A7B8C9D0E1F2",
+  });
   await assert.rejects(
     cloud.claimRecoveryCode(session, "A1B2C3D4E5F6A7B8C9D0E1F2"),
     (e: CloudError) => /isn't right/.test(e.message),
   );
-  await assert.rejects(cloud.claimRecoveryCode(session, "short"), (e: CloudError) => e.status === undefined);
+  await assert.rejects(
+    cloud.claimRecoveryCode(session, "short"),
+    (e: CloudError) => e.status === undefined,
+  );
   assert.equal(calls.length, 2, "a malformed code never reaches the server");
 });
 

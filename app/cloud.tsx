@@ -209,113 +209,113 @@ export default function Cloud() {
     >
       {!session ? (
         <>
-        <View style={card}>
-          <Text style={styles.title}>Sign in with email</Text>
-          <Text style={styles.body}>
-            We email you a code, so there is no password to remember. Your
-            backup is private to your account.
-          </Text>
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            autoComplete="email"
-            keyboardType="email-address"
-            editable={!codeSent}
-            accessibilityLabel="Email"
-          />
-          {codeSent ? (
-            <>
-              <Text style={styles.label}>Code from the email</Text>
-              <TextInput
-                style={styles.input}
-                value={code}
-                onChangeText={setCode}
-                keyboardType="number-pad"
-                autoComplete="one-time-code"
-                maxLength={10}
-                accessibilityLabel="Code from the email"
-              />
-            </>
-          ) : null}
-          {error ? (
-            <Text style={styles.error} accessibilityLiveRegion="polite">
-              {error}
+          <View style={card}>
+            <Text style={styles.title}>Sign in with email</Text>
+            <Text style={styles.body}>
+              We email you a code, so there is no password to remember. Your
+              backup is private to your account.
             </Text>
-          ) : null}
-          <Pressable
-            style={[
-              styles.primary,
-              (busy || (codeSent ? !isCode(code) : !isEmail(email))) && {
-                opacity: 0.5,
-              },
-            ]}
-            disabled={busy || (codeSent ? !isCode(code) : !isEmail(email))}
-            onPress={codeSent ? verify : sendCode}
-            accessibilityRole="button"
-          >
-            {busy ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.primaryText}>
-                {codeSent ? "Sign in" : "Email me a code"}
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              autoComplete="email"
+              keyboardType="email-address"
+              editable={!codeSent}
+              accessibilityLabel="Email"
+            />
+            {codeSent ? (
+              <>
+                <Text style={styles.label}>Code from the email</Text>
+                <TextInput
+                  style={styles.input}
+                  value={code}
+                  onChangeText={setCode}
+                  keyboardType="number-pad"
+                  autoComplete="one-time-code"
+                  maxLength={10}
+                  accessibilityLabel="Code from the email"
+                />
+              </>
+            ) : null}
+            {error ? (
+              <Text style={styles.error} accessibilityLiveRegion="polite">
+                {error}
               </Text>
-            )}
-          </Pressable>
-          {codeSent ? (
+            ) : null}
             <Pressable
-              onPress={() => {
-                setCodeSent(false);
-                setCode("");
-                setError(null);
-              }}
+              style={[
+                styles.primary,
+                (busy || (codeSent ? !isCode(code) : !isEmail(email))) && {
+                  opacity: 0.5,
+                },
+              ]}
+              disabled={busy || (codeSent ? !isCode(code) : !isEmail(email))}
+              onPress={codeSent ? verify : sendCode}
               accessibilityRole="button"
             >
-              <Text style={styles.link}>Use a different email</Text>
+              {busy ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryText}>
+                  {codeSent ? "Sign in" : "Email me a code"}
+                </Text>
+              )}
             </Pressable>
-          ) : null}
-        </View>
+            {codeSent ? (
+              <Pressable
+                onPress={() => {
+                  setCodeSent(false);
+                  setCode("");
+                  setError(null);
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={styles.link}>Use a different email</Text>
+              </Pressable>
+            ) : null}
+          </View>
 
-        <View style={card}>
-          <Text style={styles.title}>No email? Use a recovery code</Text>
-          <Text style={styles.body}>
-            Thali makes a private account for this phone and a random recovery
-            code. Save the code: it is the only way to get your backup back on a
-            new phone.
-          </Text>
-          <Pressable
-            style={[styles.secondary, busy && { opacity: 0.5 }]}
-            disabled={busy}
-            onPress={startNoEmail}
-            accessibilityRole="button"
-          >
-            <Text style={styles.secondaryText}>Start without email</Text>
-          </Pressable>
-          <Text style={styles.label}>Already have a code? Enter it</Text>
-          <TextInput
-            style={styles.input}
-            value={typedCode}
-            onChangeText={setTypedCode}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
-            placeholderTextColor={colors.muted}
-            accessibilityLabel="Recovery code"
-          />
-          <Pressable
-            style={[
-              styles.secondary,
-              (busy || !isRecoveryCode(typedCode)) && { opacity: 0.5 },
-            ]}
-            disabled={busy || !isRecoveryCode(typedCode)}
-            onPress={restoreWithCode}
-            accessibilityRole="button"
-          >
-            <Text style={styles.secondaryText}>Restore with this code</Text>
-          </Pressable>
-        </View>
+          <View style={card}>
+            <Text style={styles.title}>No email? Use a recovery code</Text>
+            <Text style={styles.body}>
+              Thali makes a private account for this phone and a random recovery
+              code. Save the code: it is the only way to get your backup back on
+              a new phone.
+            </Text>
+            <Pressable
+              style={[styles.secondary, busy && { opacity: 0.5 }]}
+              disabled={busy}
+              onPress={startNoEmail}
+              accessibilityRole="button"
+            >
+              <Text style={styles.secondaryText}>Start without email</Text>
+            </Pressable>
+            <Text style={styles.label}>Already have a code? Enter it</Text>
+            <TextInput
+              style={styles.input}
+              value={typedCode}
+              onChangeText={setTypedCode}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+              placeholderTextColor={colors.muted}
+              accessibilityLabel="Recovery code"
+            />
+            <Pressable
+              style={[
+                styles.secondary,
+                (busy || !isRecoveryCode(typedCode)) && { opacity: 0.5 },
+              ]}
+              disabled={busy || !isRecoveryCode(typedCode)}
+              onPress={restoreWithCode}
+              accessibilityRole="button"
+            >
+              <Text style={styles.secondaryText}>Restore with this code</Text>
+            </Pressable>
+          </View>
         </>
       ) : (
         <>
@@ -367,8 +367,14 @@ export default function Cloud() {
                 Save this somewhere safe, like a password manager or a note to
                 yourself. Without it, a lost or reset phone means a lost backup.
               </Text>
-              <Text selectable style={styles.code} accessibilityLabel="Recovery code">
-                {recovery ? formatRecoveryCode(recovery) : "Not saved on this phone"}
+              <Text
+                selectable
+                style={styles.code}
+                accessibilityLabel="Recovery code"
+              >
+                {recovery
+                  ? formatRecoveryCode(recovery)
+                  : "Not saved on this phone"}
               </Text>
               {recovery ? (
                 <Pressable
@@ -380,7 +386,9 @@ export default function Cloud() {
                   }
                   accessibilityRole="button"
                 >
-                  <Text style={styles.secondaryText}>Save or share the code</Text>
+                  <Text style={styles.secondaryText}>
+                    Save or share the code
+                  </Text>
                 </Pressable>
               ) : null}
               <Pressable onPress={remakeCode} accessibilityRole="button">
