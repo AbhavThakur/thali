@@ -3,19 +3,22 @@
 Read this first. Product and setup details are in README.md.
 
 ## Product
-- Free diet planner and calorie tracker for weight loss, for the owner and their family (not a commercial app).
+
+- Free diet planner and calorie tracker (lose weight, stay healthy, gain weight or build muscle), for the owner and their family (not a commercial app).
 - AI-only and self-serve: no coach or dietitian. Plans must be safe without human review.
 - India-first: Indian home dishes, household measures (roti, katori, glass), veg/egg/non-veg/vegan/Jain.
 - Reference app: MyHealthBuddy (coach-led). We copy its UX (calorie ring, macro bars, meal slots, Option 1/2/3 per meal) but generate plans automatically.
 
 ## Decisions (don't change without asking)
+
 - Expo + Expo Router, mobile first (Android/iOS); web maybe later.
-- All data on the phone in SQLite (`expo-sqlite`), no backend. Possibly a cloud backup later.
-- Plans come from deterministic code in `src/domain/plan.ts` (meal templates scaled to a calorie target). AI is never used to calculate calories.
+- All data on the phone in SQLite (`expo-sqlite`). Family: one database file per person (`thali.db` is person 1), the list lives in `expo-sqlite/kv-store` (`src/domain/people.ts`, `src/ui/People.tsx`). Cloud backup is approved by the owner: Supabase via plain `fetch` (`src/domain/cloud.ts`, `src/ui/cloudSync.ts`, `supabase/schema.sql`), email-code sign-in, one `backups` row per person guarded by RLS. Keys come from `.env` (`EXPO_PUBLIC_SUPABASE_*`).
+- Plans come from deterministic code in `src/domain/plan.ts` (meal templates scaled to a calorie target; `buildDayPlan` balances the day to within ~2% of target). AI is never used to calculate calories.
 - AI (later): Gemini behind a small proxy. The API key must never ship in the app. Users confirm every AI-detected food.
-- Safety rules in `src/domain/energy.ts`: deficit capped at 25% of maintenance; minimum 1200 kcal (women) / 1500 kcal (men); ages 18–80 only.
+- Safety rules in `src/domain/energy.ts`: deficit capped at 25% of maintenance; surplus capped at 20% (gain) or 12% (muscle) and off at BMI 25+; minimum 1200 kcal (women) / 1500 kcal (men); ages 18–80 only. Pregnancy/breastfeeding blocks any plan; an eating-disorder history blocks weight loss.
 
 ## Code conventions
+
 - `src/domain/` is pure TypeScript with no React or Expo imports. Imports there use explicit `.ts` extensions so Node can run them directly.
 - Domain tests run on Node's built-in test runner: `npm test`. No Jest. Use `import type` for type-only imports.
 - Every food in `src/domain/foods.ts` has `verified: false` (approximate values) until checked against IFCT 2017.
@@ -23,15 +26,37 @@ Read this first. Product and setup details are in README.md.
 - Format-on-save (Prettier) is on; expect reformatting after edits.
 - All SQL uses `?` parameters.
 
+## Status (2026-10-15)
+
+- Done (2026-10-15, calorie audit + big feature pass; 92 domain tests pass, typecheck and Android/iOS export clean, NOT yet run on a device):
+  - Calorie audit: day totals used to drift (+5% at 1200 kcal, −4 to −15% at 2600+, vegan bedtime empty). `buildDayPlan` now moves the shortfall onto breakfast/lunch/dinner (independent of `maxOptions`), `MAX_FACTOR` is 3, small items step by 0.25. Rice katori is 110 g (volume-based). Foods grew to ~50 and templates to ~60 so every diet has 2+ main-meal options. Food values stay `verified: false` (IFCT tables couldn't be fetched here; dish values are estimates, see the About screen).
+  - Goals: `Profile.goal` (lose/maintain/gain/muscle) + `weeklyGainKg`; old profiles are normalised on read (`normalizeProfile`). Onboarding is a position in `stepOrder(goal)` (pace is skipped for maintain); health step has "None of these"; answers saved in `settings.health`.
+  - Me tab is now a menu (`app/(tabs)/me.tsx`); the form moved to `app/edit-profile.tsx`. New screens: `foods` (custom foods + favourites, DB v5 `custom_food`/`favourite_food`, `registerCustomFoods` fills `FOOD_BY_ID`), `cloud`, `about`.
+  - Family profiles, dark mode (theme read once at start-up from `kv-store` + system; Me → Appearance, applies after reopening; `primaryText`/`tint` tokens), cloud backup (needs `.env` + running `supabase/schema.sql`).
+  - Run `npx expo start -c` after pulling; rebuild the APK for the new icon/splash, `userInterfaceStyle: automatic` and the `.env` keys.
+
 ## Status (2026-10-14)
-- Done: Profile (calorie/macro targets), Diet Plan (Option 1/2/3 per meal, "I ate this"), Today (calorie ring, macro bars, logged items), Add food (search + quantity). 15 domain tests pass.
-- `npm run setup` ran, but the install looks incomplete (`node_modules/typescript` is missing) and `typescript`/`@types/react` ended up in `dependencies`. Run `npm install` again, then `npm run typecheck` and `npm start`. The app has not been run on a device yet.
+
+- Done: Profile (calorie/macro targets), Diet Plan (Option 1/2/3 per meal, "I ate this"), Today (calorie ring, macro bars, logged items), Add food (search + quantity). 16 domain tests pass.
+- Done: Profile save shows a spinner and a result sheet; target weight can't go below BMI 18.5; Plan has a Mon–Sun day picker; "I ate this" can be undone (`food_log.batch_id`, DB `user_version` 1).
+- Done: first-launch onboarding (`app/onboarding.tsx`, Today redirects there when no profile); Today redesign (greeting, logging streak from `src/domain/streak.ts`, encouragement line, per-meal progress, suggested meal with one-tap log/undo). Form validation shared in `src/ui/profileForm.ts`.
+- Done: edit any plan option (`src/ui/EditMealSheet.tsx`): change qty, remove/add foods, save for this day or every day, reset. Stored in `plan_override` (DB `user_version` 2), applied by `applyOverrides()` in `plan.ts` on both Plan and Today. 22 domain tests pass.
+- Product plan proposed (not yet approved): tabs Today/Plan/Progress/Me; stars (log all meals, ±10% of target, protein hit) and forgiving streaks, never reward eating less; local-first, optional Supabase later (needs owner approval).
+- Done (2026-10-15): tabs Today/Diet Plan/Progress/Me. Mascot `src/ui/Mascot.tsx` (SVG, moods). Haptics (`src/ui/haptics.ts`), Undo toast (`src/ui/Toast.tsx`), animated calorie ring. Name editable from Today header. Water tracker, daily stars and achievements (`src/domain/rewards.ts`, celebration modal, seen ids in `settings`). Progress tab: weight log + chart, streaks, 5-week star calendar, badges. Me tab: backup export (Share sheet JSON) / restore (paste) / delete all. Protein-first plans (`buildDayPlan(..., proteinFirst=true)`, veg avg 63 → 80 g/day). Week grocery list. DB `user_version` 4 (weight_log, water_log, settings). 31 domain tests pass.
+- Done: first-run guided tour on Today (`src/ui/Tour.tsx`, 8 steps, `settings.tour_done`; Me → "Replay app tour"). Weight edits in Me also go to `weight_log`. Add food waits for the diet before listing foods. At or below target weight, `calorieTarget` returns maintenance (`atGoal`, still ≥ the calorie floor). 32 domain tests pass.
+- Runtime gotcha: after changing `react-native-worklets`, restart Metro with `npx expo start -c` or the stale cache throws a Worklets version mismatch and every route warns "missing default export".
+- Done: local reminders (`expo-notifications`, works in Expo Go). Pure planner `src/domain/reminders.ts` schedules one-off DATE notifications for the next 4 days (≤60, iOS caps at 64) and skips today's items already done; `src/ui/notifications.ts` re-plans on app foreground, Today/Plan reload and weigh-ins. Prefs in `settings.reminders`; UI in Me (`src/ui/ReminderSettings.tsx`) and a one-time card on Today. 41 domain tests pass.
+- Done: `expo-notifications` is imported only via `src/ui/notify.ts` (deep imports; the package index crashes Expo Go Android). Reminders have their own screen `app/reminders.tsx` (🔔 on Today header, row in Me). Onboarding body step shows BMI (Asian cut-offs 23/25), advice and 5%/10%/healthy-max target options (`src/domain/bmi.ts`). Icons generated by `swift scripts/make-icons.swift` into `assets/`; app.json has icon, adaptive icon, splash (needs `expo-splash-screen`), notification icon, versionCode, blocked unused Android permissions. 52 domain tests pass.
+- Done (UI audit): darker WCAG-AA palette in `theme.ts` (`primary #0A7F58`; use `warnText` for amber text; white on the old #2EB583 failed AA), `src/ui/Loading.tsx` placeholder, Progress/Plan redirect to onboarding with no profile, light status bar on Today header, flat headers via Stack/Tabs `screenOptions`, onboarding is 9 steps (new health-check step before the plan reveal; Android back goes to the previous step), Add food shows recents (`getRecentFoodIds`) and an empty state, `useProgress` returns `loaded`, a11y labels/roles and ≥40px targets on Plan/Edit sheet/reminder day chips. Not yet checked on a device. Still missing: dark mode, custom foods/favourites, family profiles, splitting the long Me form.
+- Done: History (`app/history.tsx`, logic in `src/domain/history.ts`): every day for 7 days / 30 days / 3 months with kcal vs target, stars, water, weight; expand a day to see meals, remove items, or add food to any past day (`/add?date=YYYY-MM-DD`). Opened from Progress → History card or by tapping a calendar day. Past days are judged against the current targets.
+- E2E: `npm run e2e` drives an Android emulator through adb + uiautomator (`e2e/driver.mjs`, flow in `e2e/run.mjs`, screenshots in `e2e/artifacts/`). Needs emulator `Pixel_10_Pro` running, Expo Go (SDK 57) installed on it, and Metro running. The agent can't install Expo Go itself (safety check); the cached `~/.expo/android-apk-cache` APK (2.31.2) is too old.
+- `npm run setup` failed with ERESOLVE (react-dom 19.3.1 vs react 19.2.3). Fixed in `package.json`: pinned `react-dom` 19.2.3, added `@expo/vector-icons`, and moved `typescript`/`@types/*` to devDependencies. TS 6 defaults `types` to `[]`, so `tsconfig.json` sets `"types": ["node"]`. Use `npm install` from now on, not `npm run setup`. The app runs on a phone via Expo Go.
 - In agent sessions, the safety check blocks package installs (`npx create-expo-app`, `npm install`). The user runs those manually.
 
 ## Next (in order)
-1. Get the app running: fix typecheck/runtime errors.
-2. Make the plan engine aim for the protein target too; vegetarian plans currently fall well short (about 55 g vs an 83 g target).
-3. Verify foods against IFCT and grow the list toward ~300 dishes.
-4. Weight log and trend chart.
-5. Several family profiles on one phone.
-6. Smart swap, then AI photo/voice logging.
+
+1. Test everything on a device (`npm run e2e` is updated for the goal step and the Me menu), and fix what it finds.
+2. Run the Supabase SQL, add `.env`, test sign-in, backup and restore on a real project (the client is only unit-tested with a fake fetch).
+3. Verify foods against IFCT/NIN and grow the list toward ~300 dishes.
+4. Live theme switching (needs themed styles instead of start-up colours).
+5. AI photo/voice logging via a Gemini proxy.

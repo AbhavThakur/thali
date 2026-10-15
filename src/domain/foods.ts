@@ -3,6 +3,8 @@ import type { Food } from "./types.ts";
 type Tags = Food["tags"];
 
 // Approximate home-style values per 100 g; all verified:false until checked against IFCT 2017.
+// Household measures are volume-based: a katori holds about 150 ml, so loose foods weigh less
+// than dense ones (cooked rice is about 110 g, dal or curry about 150 g).
 function food(
   id: string,
   name: string,
@@ -31,14 +33,14 @@ export const FOODS: Food[] = [
     "Steamed white rice",
     [130, 2.7, 28, 0.3, 0.4],
     "katori",
-    150,
+    110,
   ),
   food(
     "rice_brown",
     "Steamed brown rice",
     [112, 2.3, 23.5, 0.8, 1.8],
     "katori",
-    150,
+    110,
   ),
   food(
     "oats",
@@ -71,6 +73,16 @@ export const FOODS: Food[] = [
     [180, 9, 20, 7, 4],
     "chilla",
     60,
+    ONION_GARLIC,
+  ),
+  food("paratha", "Plain paratha", [320, 7.5, 45, 12, 4], "paratha", 60),
+  food("khichdi", "Moong dal khichdi", [105, 4, 17, 2.5, 1.5], "katori", 150),
+  food(
+    "veg_pulao",
+    "Vegetable pulao",
+    [140, 3, 23, 4, 1.5],
+    "katori",
+    150,
     ONION_GARLIC,
   ),
 
@@ -117,6 +129,13 @@ export const FOODS: Food[] = [
     100,
     ONION_GARLIC,
   ),
+  food(
+    "jain_sabzi",
+    "Veg sabzi (no onion, garlic or potato)",
+    [85, 2.5, 8, 5, 3],
+    "katori",
+    100,
+  ),
   food("palak_paneer", "Palak paneer", [165, 7.5, 6, 12.5, 2], "katori", 150, {
     dairy: true,
     rootVeg: true,
@@ -144,6 +163,18 @@ export const FOODS: Food[] = [
   food("egg_boiled", "Boiled egg", [155, 12.6, 1.1, 10.6, 0], "egg", 50, {
     egg: true,
   }),
+  food("egg_bhurji", "Egg bhurji", [170, 11, 3, 12.5, 0.5], "katori", 100, {
+    egg: true,
+    rootVeg: true,
+  }),
+  food(
+    "chicken_breast",
+    "Grilled chicken breast",
+    [165, 31, 0, 3.6, 0],
+    "serving (100 g)",
+    100,
+    { meat: true },
+  ),
 
   // Dairy
   food("paneer", "Paneer", [265, 18, 3.5, 20.5, 0], "serving (50 g)", 50, {
@@ -162,6 +193,13 @@ export const FOODS: Food[] = [
     dairy: true,
   }),
   food("ghee", "Ghee", [900, 0, 0, 100, 0], "tsp", 5, { dairy: true }),
+  food(
+    "soy_milk",
+    "Soy milk (unsweetened)",
+    [33, 2.9, 1.7, 1.6, 0.4],
+    "glass",
+    200,
+  ),
 
   // Snacks, fruit, sides
   food(
@@ -173,6 +211,31 @@ export const FOODS: Food[] = [
   ),
   food("sprouts", "Moong sprouts", [30, 3, 6, 0.2, 1.8], "katori", 100),
   food("almonds", "Almonds", [579, 21, 22, 50, 12.5], "serving (10 pcs)", 12),
+  food(
+    "peanuts",
+    "Roasted peanuts",
+    [585, 24, 21, 49.5, 8],
+    "handful (25 g)",
+    25,
+  ),
+  food("peanut_butter", "Peanut butter", [588, 25, 20, 50, 6], "tbsp", 16),
+  food("makhana", "Roasted makhana", [350, 10, 76, 0.5, 14], "bowl (25 g)", 25),
+  food(
+    "dates",
+    "Dates (khajoor)",
+    [277, 1.8, 75, 0.2, 6.7],
+    "serving (2 dates)",
+    16,
+  ),
+  food(
+    "chana_salad",
+    "Boiled chickpea salad",
+    [164, 8.9, 27, 2.6, 7.6],
+    "katori",
+    100,
+  ),
+  food("guava", "Guava", [68, 2.6, 14, 1, 5.4], "guava", 100),
+  food("papaya", "Papaya", [43, 0.5, 11, 0.3, 1.7], "katori", 150),
   food("banana", "Banana", [89, 1.1, 23, 0.3, 2.6], "banana", 100),
   food("apple", "Apple", [52, 0.3, 14, 0.2, 2.4], "apple", 180),
   food(
@@ -194,3 +257,17 @@ export const FOODS: Food[] = [
 export const FOOD_BY_ID: Record<string, Food> = Object.fromEntries(
   FOODS.map((f) => [f.id, f]),
 );
+
+let customFoods: Food[] = [];
+
+/** The user's own foods, always flagged `custom`. Replaces whatever was registered before. */
+export function registerCustomFoods(list: Food[]) {
+  for (const f of customFoods) delete FOOD_BY_ID[f.id];
+  customFoods = list.map((f) => ({ ...f, custom: true, verified: false }));
+  for (const f of customFoods) FOOD_BY_ID[f.id] = f;
+}
+
+/** Built-in foods plus the user's own. */
+export function allFoods(): Food[] {
+  return [...FOODS, ...customFoods];
+}

@@ -1,6 +1,15 @@
+import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedProps,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import Svg, { Circle } from "react-native-svg";
 import { colors } from "./theme.ts";
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 export function CalorieRing({
   consumed,
@@ -16,8 +25,18 @@ export function CalorieRing({
   const c = 2 * Math.PI * r;
   const pct = target > 0 ? Math.min(consumed / target, 1) : 0;
   const over = consumed > target;
-  const color = over ? colors.danger : pct > 0.9 ? colors.warn : colors.primary;
+  const color = pct > 0.9 ? colors.warn : colors.primary;
   const mid = size / 2;
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    progress.value = withTiming(pct, {
+      duration: 700,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [pct, progress]);
+  const animatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: c * (1 - progress.value),
+  }));
 
   return (
     <View style={[styles.wrap, { width: size, height: size }]}>
@@ -30,7 +49,7 @@ export function CalorieRing({
           strokeWidth={stroke}
           fill="none"
         />
-        <Circle
+        <AnimatedCircle
           cx={mid}
           cy={mid}
           r={r}
@@ -38,7 +57,7 @@ export function CalorieRing({
           strokeWidth={stroke}
           fill="none"
           strokeDasharray={`${c} ${c}`}
-          strokeDashoffset={c * (1 - pct)}
+          animatedProps={animatedProps}
           strokeLinecap="round"
           rotation={-90}
           origin={`${mid}, ${mid}`}
@@ -46,7 +65,7 @@ export function CalorieRing({
       </Svg>
       <Text style={styles.big}>{Math.round(consumed).toLocaleString()}</Text>
       <Text style={styles.small}>of {target.toLocaleString()} kcal</Text>
-      <Text style={[styles.small, over && { color: colors.danger }]}>
+      <Text style={[styles.small, over && { color: colors.warnText }]}>
         {over
           ? `${Math.round(consumed - target)} over`
           : `${Math.round(target - consumed)} left`}

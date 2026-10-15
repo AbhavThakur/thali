@@ -11,6 +11,15 @@ export type DietType =
   | "non_vegetarian"
   | "vegan"
   | "jain";
+export type Goal = "lose" | "maintain" | "gain" | "muscle";
+
+/** Answers from the onboarding health check; `none` means the person ticked "none of these". */
+export type Health = {
+  pregnant: boolean;
+  ed: boolean;
+  medical: boolean;
+  none: boolean;
+};
 export type SlotId =
   | "early_morning"
   | "breakfast"
@@ -28,7 +37,11 @@ export type Profile = {
   targetWeightKg: number;
   activity: ActivityLevel;
   dietType: DietType;
+  goal: Goal;
+  /** Pace for a weight-loss goal, kg per week. */
   weeklyLossKg: number;
+  /** Pace for a gain or muscle goal, kg per week. */
+  weeklyGainKg: number;
 };
 
 export type Macros = {
@@ -48,6 +61,8 @@ export type Food = {
   tags: { dairy?: boolean; egg?: boolean; meat?: boolean; rootVeg?: boolean };
   /** false = approximate home-style value, not yet checked against IFCT. */
   verified: boolean;
+  /** Added by the user; stored on the phone, not part of the built-in list. */
+  custom?: boolean;
 };
 
 export type TemplateItem = { foodId: string; qty: number; step: number };
@@ -58,10 +73,21 @@ export type MealOption = {
   templateId: string;
   items: PlannedItem[];
   totals: Macros;
+  /** true when the user has edited this option. */
+  edited?: boolean;
 };
 export type SlotPlan = {
   slot: SlotId;
   label: string;
   targetKcal: number;
   options: MealOption[];
+};
+
+export type PlanItemInput = { foodId: string; qty: number };
+/** A user's edit of one meal option. `date` "" means every day. */
+export type PlanOverride = {
+  slot: SlotId;
+  templateId: string;
+  date: string;
+  items: PlanItemInput[];
 };

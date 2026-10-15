@@ -3,7 +3,7 @@ import type { MealTemplate, SlotId, TemplateItem } from "./types.ts";
 const i = (
   foodId: string,
   qty: number,
-  step = qty < 1 ? 0.5 : 1,
+  step = qty < 1 ? 0.25 : 1,
 ): TemplateItem => ({ foodId, qty, step });
 
 function t(id: string, slot: SlotId, ...items: TemplateItem[]): MealTemplate {
@@ -13,6 +13,7 @@ function t(id: string, slot: SlotId, ...items: TemplateItem[]): MealTemplate {
 export const TEMPLATES: MealTemplate[] = [
   t("em_almonds", "early_morning", i("almonds", 1)),
   t("em_banana", "early_morning", i("banana", 0.5)),
+  t("em_dates", "early_morning", i("dates", 1, 0.5)),
 
   t("b_poha", "breakfast", i("poha", 1, 0.5), i("tea_milk", 1)),
   t(
@@ -32,6 +33,30 @@ export const TEMPLATES: MealTemplate[] = [
     i("banana", 0.5),
   ),
   t("b_upma", "breakfast", i("upma", 1, 0.5), i("sprouts", 1, 0.5)),
+  t("b_paratha_curd", "breakfast", i("paratha", 1), i("curd", 1, 0.5)),
+  t(
+    "b_idli_chutney",
+    "breakfast",
+    i("idli", 3),
+    i("coconut_chutney", 1),
+    i("sprouts", 1, 0.5),
+  ),
+  t("b_dosa", "breakfast", i("dosa", 2), i("coconut_chutney", 1)),
+  t("b_poha_peanuts", "breakfast", i("poha", 1, 0.5), i("peanuts", 1, 0.5)),
+  t(
+    "b_oats_soy",
+    "breakfast",
+    i("oats", 1, 0.5),
+    i("soy_milk", 1, 0.5),
+    i("banana", 0.5),
+  ),
+  t("b_bhurji", "breakfast", i("egg_bhurji", 1, 0.5), i("roti", 2)),
+  t(
+    "b_chilla_chutney",
+    "breakfast",
+    i("besan_chilla", 2),
+    i("coconut_chutney", 1),
+  ),
 
   t(
     "l_dal_roti",
@@ -79,10 +104,84 @@ export const TEMPLATES: MealTemplate[] = [
     i("chole", 1, 0.5),
     i("cucumber_salad", 1),
   ),
+  t(
+    "l_khichdi_curd",
+    "lunch",
+    i("khichdi", 1.5, 0.5),
+    i("curd", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
+  t(
+    "l_dal_roti_vegan",
+    "lunch",
+    i("roti", 2),
+    i("dal_tadka", 1, 0.5),
+    i("mixed_veg", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
+  t(
+    "l_jain_dal_roti",
+    "lunch",
+    i("roti", 2),
+    i("moong_dal", 1, 0.5),
+    i("jain_sabzi", 1, 0.5),
+    i("curd", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
+  t(
+    "l_rajma_rice_vegan",
+    "lunch",
+    i("rice_white", 1, 0.5),
+    i("rajma", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
+  t(
+    "l_pulao_raita",
+    "lunch",
+    i("veg_pulao", 1.5, 0.5),
+    i("curd", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
+  t(
+    "l_pulao_soya",
+    "lunch",
+    i("veg_pulao", 1.5, 0.5),
+    i("soya_chunks", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
+  t(
+    "l_tofu_rice",
+    "lunch",
+    i("rice_white", 1, 0.5),
+    i("tofu", 2),
+    i("jain_sabzi", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
+  t(
+    "l_chicken_roti",
+    "lunch",
+    i("roti", 2),
+    i("chicken_curry", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
+  t(
+    "l_grilled_chicken",
+    "lunch",
+    i("chicken_breast", 1, 0.5),
+    i("rice_white", 1, 0.5),
+    i("moong_dal", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
 
   t("s_chana", "snack", i("roasted_chana", 1, 0.5), i("tea_milk", 1)),
   t("s_sprouts", "snack", i("sprouts", 1, 0.5), i("buttermilk", 1)),
   t("s_fruit", "snack", i("apple", 1), i("almonds", 1)),
+  t("s_peanut_guava", "snack", i("guava", 1), i("peanuts", 1, 0.5)),
+  t("s_makhana_dates", "snack", i("makhana", 1, 0.5), i("dates", 1, 0.5)),
+  t("s_egg", "snack", i("egg_boiled", 2)),
+  t("s_papaya_almonds", "snack", i("papaya", 1, 0.5), i("almonds", 1)),
+  t("s_chana_salad", "snack", i("chana_salad", 1, 0.5)),
+  t("s_banana_pb", "snack", i("banana", 1), i("peanut_butter", 1, 0.5)),
 
   t(
     "d_moong_roti",
@@ -107,6 +206,65 @@ export const TEMPLATES: MealTemplate[] = [
     i("cucumber_salad", 1),
   ),
   t("d_tofu", "dinner", i("roti", 2), i("tofu", 2), i("cucumber_salad", 1)),
+  t(
+    "d_paneer_roti",
+    "dinner",
+    i("roti", 2),
+    i("paneer", 1),
+    i("mixed_veg", 1, 0.5),
+  ),
+  t(
+    "d_khichdi",
+    "dinner",
+    i("khichdi", 1.5, 0.5),
+    i("curd", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
+  t(
+    "d_dal_rice",
+    "dinner",
+    i("rice_white", 1, 0.5),
+    i("dal_tadka", 1, 0.5),
+    i("mixed_veg", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
+  t(
+    "d_chole_roti",
+    "dinner",
+    i("roti", 2),
+    i("chole", 1, 0.5),
+    i("cucumber_salad", 1),
+  ),
+  t(
+    "d_jain_dal_roti",
+    "dinner",
+    i("roti", 2),
+    i("moong_dal", 1, 0.5),
+    i("jain_sabzi", 1, 0.5),
+  ),
+  t(
+    "d_jain_paneer",
+    "dinner",
+    i("roti", 2),
+    i("paneer", 1),
+    i("jain_sabzi", 1, 0.5),
+  ),
+  t(
+    "d_chicken_roti",
+    "dinner",
+    i("roti", 2),
+    i("chicken_breast", 1, 0.5),
+    i("mixed_veg", 1, 0.5),
+  ),
+  t(
+    "d_egg_roti",
+    "dinner",
+    i("egg_bhurji", 1, 0.5),
+    i("roti", 2),
+    i("cucumber_salad", 1),
+  ),
 
   t("bt_milk", "bedtime", i("milk_toned", 0.5)),
+  t("bt_almonds", "bedtime", i("almonds", 0.5)),
+  t("bt_soy", "bedtime", i("soy_milk", 0.5)),
 ];
