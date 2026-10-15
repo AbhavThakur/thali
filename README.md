@@ -10,6 +10,7 @@ npm start          # scan the QR code with Expo Go (Android/iOS)
 npm test           # domain tests (Node built-in runner, no deps needed)
 npm run typecheck
 npm run e2e        # end-to-end on an Android emulator with Expo Go + Metro running
+npm run e2e:web    # Playwright end-to-end tests on Expo web (starts the web server itself; uses your installed Chrome)
 npm run build      # release APK: android/app/build/outputs/apk/release/app-release.apk (needs ANDROID_HOME; don't use sudo)
 ```
 
@@ -43,11 +44,15 @@ Sign-in without email (optional): turn on Authentication → Sign In / Providers
 
 Keeping the free project awake: Supabase pauses free projects after 7 days without activity. `.github/workflows/supabase-keepalive.yml` pings the database every Monday and Thursday. Push the repo to GitHub, then add two repository secrets (Settings → Secrets and variables → Actions): `SUPABASE_URL` and `SUPABASE_ANON_KEY`. Run it once from the Actions tab to check it passes. GitHub stops scheduled runs after 60 days with no commits on public repos, so make a commit now and then, or use a private repo.
 
+## Family (optional)
+
+Everyone installs Thali on their own phone, signs in to the cloud (email or recovery code) and joins one family with an 8-letter invite code (Family tab). Members see each other's streak, stars, meals logged today and a weekly "everyone logs 5 days" goal, and can send cheers. Only a small daily summary is shared, never foods or calories; weight is shared only if that person turns on "Share my weight" (off by default, and removing the switch deletes it). Needs the latest `supabase/schema.sql` run once (safe to run again). All writes go through database functions; the tables are read-only for the app, and RLS limits reads to your own family. Push notifications are not built; cheers show as a badge on the Family tab.
+
 ## Layout
 
 ```
-app/                 screens (Today, Diet Plan, Progress, Me, Add food, My foods, Cloud, ...)
-src/domain/          pure TS: energy, nutrition, foods, templates, plan, people, cloud  (+ __tests__)
+app/                 screens (Today, Diet Plan, Progress, Family, Me, Add food, My foods, Cloud, ...)
+src/domain/          pure TS: energy, nutrition, foods, templates, plan, people, cloud, family  (+ __tests__)
 src/db/              SQLite schema and queries
 src/hooks/ src/ui/   React glue and components
 supabase/            schema.sql for cloud backup

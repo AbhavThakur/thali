@@ -42,6 +42,8 @@ export type Profile = {
   weeklyLossKg: number;
   /** Pace for a gain or muscle goal, kg per week. */
   weeklyGainKg: number;
+  /** The date picked for reaching the target weight (YYYY-MM-DD); the pace above was worked out from it. */
+  targetDate?: string;
 };
 
 export type Macros = {

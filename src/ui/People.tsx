@@ -1,5 +1,5 @@
 import { deleteDatabaseAsync } from "expo-sqlite";
-import Storage from "expo-sqlite/kv-store";
+import Storage from "./kv";
 import {
   createContext,
   useCallback,

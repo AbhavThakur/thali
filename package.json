@@ -11,9 +11,11 @@
     "test": "node --experimental-strip-types --no-warnings --test 'src/domain/__tests__/*.test.ts'",
     "build": "npx expo prebuild --platform android --clean && cd android && ./gradlew assembleRelease",
     "typecheck": "tsc --noEmit",
-    "e2e": "node e2e/run.mjs"
+    "e2e": "node e2e/run.mjs",
+    "e2e:web": "playwright test"
   },
   "dependencies": {
+    "@expo/metro-runtime": "~57.0.17",
     "@expo/vector-icons": "^15.0.2",
     "expo": "^57.0.29",
     "expo-constants": "~57.0.22",
@@ -34,11 +36,14 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
+    "react-native-web": "~0.21.0",
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^22.15.0",
     "@types/react": "~19.2.4",
     "typescript": "~6.0.3"
-  }
+  },
+  "packageManager": "yarn@4.12.0+sha512.f45ab632439a67f8bc759bf32ead036a1f413287b9042726b7cc4818b7b49e14e9423ba49b18f9e06ea4941c1ad062385b1d8760a8d5091a1a31e5f6219afca8"
 }

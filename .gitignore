@@ -8,3 +8,5 @@ e2e/artifacts/
 .env*
 !.env.example
 .DS_Store
+playwright-report/
+test-results/

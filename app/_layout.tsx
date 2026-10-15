@@ -1,12 +1,14 @@
+import "../src/ui/webAlert.ts";
 import * as Notifications from "../src/ui/notify.ts";
 import { router, Stack } from "expo-router";
 import { SQLiteProvider, useSQLiteContext } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState, type ReactNode } from "react";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { loadCustomFoods, migrate } from "../src/db/db.ts";
 import { autoBackupIfDue } from "../src/ui/cloudSync.ts";
+import { publishFamily } from "../src/ui/familySync.ts";
 import { Loading } from "../src/ui/Loading.tsx";
 import { syncReminders } from "../src/ui/notifications.ts";
 import { PeopleProvider, usePeople } from "../src/ui/People.tsx";
@@ -17,6 +19,7 @@ import { ToastProvider } from "../src/ui/Toast.tsx";
 function ReminderObserver() {
   const db = useSQLiteContext();
   useEffect(() => {
+    if (Platform.OS === "web") return; // no scheduled notifications in browsers
     const open = (n: Notifications.Notification) => {
       const url = n.request.content.data?.url;
       if (typeof url === "string") router.navigate(url as "/");
@@ -54,13 +57,17 @@ function FoodsGate({ children }: { children: ReactNode }) {
   return ready ? <>{children}</> : <Loading />;
 }
 
-/** Backs up to the cloud about once a day, if the user switched that on. */
+/** Backs up to the cloud about once a day (if switched on) and shares the family summary. */
 function AutoBackup() {
   const { people } = usePeople();
   useEffect(() => {
     void autoBackupIfDue(people);
+    void publishFamily(people);
     const app = AppState.addEventListener("change", (s) => {
-      if (s === "active") void autoBackupIfDue(people);
+      if (s === "active") {
+        void autoBackupIfDue(people);
+        void publishFamily(people);
+      }
     });
     return () => app.remove();
   }, [people]);

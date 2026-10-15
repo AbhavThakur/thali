@@ -9,10 +9,10 @@ export const ACTIVITY_FACTOR: Record<ActivityLevel, number> = {
 };
 
 export const MIN_KCAL: Record<Sex, number> = { female: 1200, male: 1500 };
-const KCAL_PER_KG = 7700;
-const MAX_DEFICIT_RATIO = 0.25;
+export const KCAL_PER_KG = 7700;
+export const MAX_DEFICIT_RATIO = 0.25;
 /** Weight gain: surplus stays modest so most of it is not fat. */
-const MAX_SURPLUS_RATIO: Record<"gain" | "muscle", number> = {
+export const MAX_SURPLUS_RATIO: Record<"gain" | "muscle", number> = {
   gain: 0.2,
   muscle: 0.12,
 };

@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import type { ColorValue } from "react-native";
+import { useCheers } from "../../src/hooks/useCheers.ts";
 import { colors } from "../../src/ui/theme.ts";
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -11,6 +12,7 @@ const icon =
   );
 
 export default function TabsLayout() {
+  const cheers = useCheers();
   return (
     <Tabs
       screenOptions={{
@@ -42,6 +44,14 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="progress"
         options={{ title: "Progress", tabBarIcon: icon("stats-chart-outline") }}
+      />
+      <Tabs.Screen
+        name="family"
+        options={{
+          title: "Family",
+          tabBarIcon: icon("people-outline"),
+          tabBarBadge: cheers > 0 ? cheers : undefined,
+        }}
       />
       <Tabs.Screen
         name="me"

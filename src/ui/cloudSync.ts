@@ -1,5 +1,5 @@
 import { openDatabaseAsync } from "expo-sqlite";
-import Storage from "expo-sqlite/kv-store";
+import Storage from "./kv";
 import { exportBackup, importBackup, migrate } from "../db/db.ts";
 import {
   CloudError,

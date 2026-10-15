@@ -1,12 +1,13 @@
 import { router } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
   Alert,
   Animated,
   BackHandler,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -40,9 +41,13 @@ import {
 import {
   ageError,
   EMPTY,
+  schedule,
   toProfile,
   type Form,
 } from "../src/ui/profileForm.ts";
+import { formatDay } from "../src/domain/timeline.ts";
+import { cmToFtIn, ftInToCm } from "../src/domain/units.ts";
+import { TargetDate } from "../src/ui/TargetDate.tsx";
 import { colors } from "../src/ui/theme.ts";
 import { haptic } from "../src/ui/haptics.ts";
 import { Mascot } from "../src/ui/Mascot.tsx";
@@ -62,15 +67,6 @@ const DIET_CARDS: [DietType, string, string][] = [
   ["vegan", "🌱", "Vegan"],
   ["jain", "🙏", "Jain"],
 ];
-const PACE_CARDS: [number, string, string][] = [
-  [0.25, "🐢", "Relaxed"],
-  [0.5, "🚶", "Steady (recommended)"],
-  [0.75, "🐇", "Faster"],
-];
-const GAIN_PACE_CARDS: [number, string, string][] = [
-  [0.25, "🚶", "Steady (recommended)"],
-  [0.5, "🐇", "Faster"],
-];
 const SEX_CARDS: [Sex, string, string][] = [
   ["female", "👩", "Female"],
   ["male", "👨", "Male"],
@@ -84,14 +80,14 @@ const S = {
   body: 3,
   activity: 4,
   diet: 5,
-  pace: 6,
+  when: 6,
   health: 7,
   plan: 8,
   goal: 9,
 } as const;
 
-/** "Stay healthy" has no pace to pick, so that question is skipped. */
-const stepOrder = (goal: Goal): number[] => [
+/** "Stay healthy" (or a goal with nothing to schedule) has no target date, so that question is skipped. */
+const stepOrder = (dated: boolean): number[] => [
   S.welcome,
   S.name,
   S.about,
@@ -99,7 +95,7 @@ const stepOrder = (goal: Goal): number[] => [
   S.body,
   S.activity,
   S.diet,
-  ...(goal === "maintain" ? [] : [S.pace]),
+  ...(dated ? [S.when] : []),
   S.health,
   S.plan,
 ];
@@ -170,6 +166,11 @@ function Input({
   unit,
   numeric = true,
   autoFocus,
+  inputRef,
+  onSubmit,
+  returnKeyType = "next",
+  onFocusAt,
+  hideLabel,
 }: {
   label: string;
   value: string;
@@ -177,17 +178,34 @@ function Input({
   unit?: string;
   numeric?: boolean;
   autoFocus?: boolean;
+  inputRef?: RefObject<TextInput | null>;
+  /** Called from the keyboard's next/done key. */
+  onSubmit?: () => void;
+  returnKeyType?: "next" | "done";
+  /** Called with this field's top (inside the scrolling content) when it gains focus. */
+  onFocusAt?: (y: number) => void;
+  /** The label still names the field for screen readers; something else shows it. */
+  hideLabel?: boolean;
 }) {
+  const y = useRef(0);
   return (
-    <View style={{ marginBottom: 16 }}>
-      <Text style={styles.label}>{label}</Text>
+    <View
+      style={{ marginBottom: 16 }}
+      onLayout={(e) => (y.current = e.nativeEvent.layout.y)}
+    >
+      {hideLabel ? null : <Text style={styles.label}>{label}</Text>}
       <View style={styles.inputWrap}>
         <TextInput
+          ref={inputRef}
           style={styles.input}
           value={value}
           onChangeText={onChange}
           keyboardType={numeric ? "decimal-pad" : "default"}
           autoFocus={autoFocus}
+          returnKeyType={returnKeyType}
+          submitBehavior={returnKeyType === "done" ? "blurAndSubmit" : "submit"}
+          onSubmitEditing={onSubmit}
+          onFocus={() => onFocusAt?.(y.current)}
           placeholderTextColor={colors.muted}
           accessibilityLabel={unit ? `${label} in ${unit}` : label}
         />
@@ -195,6 +213,124 @@ function Input({
       </View>
     </View>
   );
+}
+
+/** Height in centimetres, or feet and inches for people who think in those; the form always keeps centimetres. */
+function HeightInput({
+  value,
+  onChange,
+  onSubmit,
+  onFocusAt,
+}: {
+  value: string;
+  onChange: (cm: string) => void;
+  onSubmit: () => void;
+  onFocusAt: (y: number) => void;
+}) {
+  const [unit, setUnit] = useState<"cm" | "ft">("cm");
+  const [ft, setFt] = useState("");
+  const [inch, setInch] = useState("");
+  const inchRef = useRef<TextInput>(null);
+
+  const choose = (u: "cm" | "ft") => {
+    if (u === "ft") {
+      const cm = +value;
+      const f = cm > 0 ? cmToFtIn(cm) : null;
+      setFt(f ? String(f.ft) : "");
+      setInch(f ? String(f.inch) : "");
+    }
+    setUnit(u);
+  };
+  const edit = (f: string, i: string) => {
+    setFt(f);
+    setInch(i);
+    onChange(f.trim() === "" ? "" : String(ftInToCm(+f || 0, +i || 0)));
+  };
+
+  return (
+    <View>
+      <View style={styles.unitRow}>
+        <Text style={styles.label}>Height</Text>
+        {(["cm", "ft"] as const).map((u) => (
+          <Pressable
+            key={u}
+            onPress={() => choose(u)}
+            style={[styles.unitChip, unit === u && styles.unitChipOn]}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: unit === u }}
+            accessibilityLabel={u === "cm" ? "Centimetres" : "Feet and inches"}
+          >
+            <Text
+              style={[styles.unitChipText, unit === u && { color: "#fff" }]}
+            >
+              {u === "cm" ? "cm" : "ft & in"}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      {unit === "cm" ? (
+        <Input
+          label="Height"
+          hideLabel
+          value={value}
+          onChange={onChange}
+          unit="cm"
+          onSubmit={onSubmit}
+          onFocusAt={onFocusAt}
+        />
+      ) : (
+        <>
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Input
+                label="Feet"
+                hideLabel
+                value={ft}
+                onChange={(v) => edit(v, inch)}
+                unit="ft"
+                onSubmit={() => inchRef.current?.focus()}
+                onFocusAt={onFocusAt}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Input
+                label="Inches"
+                hideLabel
+                value={inch}
+                onChange={(v) => edit(ft, v)}
+                unit="in"
+                inputRef={inchRef}
+                onSubmit={onSubmit}
+                onFocusAt={onFocusAt}
+              />
+            </View>
+          </View>
+          {+value > 0 ? <Text style={styles.cmHint}>= {value} cm</Text> : null}
+        </>
+      )}
+    </View>
+  );
+}
+
+/** True while the on-screen keyboard is open, so the bottom safe-area gap can make room for it. */
+function useKeyboardOpen() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const ios = Platform.OS === "ios";
+    const show = Keyboard.addListener(
+      ios ? "keyboardWillShow" : "keyboardDidShow",
+      () => setOpen(true),
+    );
+    const hide = Keyboard.addListener(
+      ios ? "keyboardWillHide" : "keyboardDidHide",
+      () => setOpen(false),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  return open;
 }
 
 export default function Onboarding() {
@@ -214,10 +350,32 @@ export default function Onboarding() {
     none: false,
   });
   const [calm, setCalm] = useState(false);
-  const order = stepOrder(form.goal);
+  const keyboardOpen = useKeyboardOpen();
+  const scrollRef = useRef<ScrollView>(null);
+  const weightRef = useRef<TextInput>(null);
+  const targetRef = useRef<TextInput>(null);
+  // Waits for the keyboard to finish opening, then keeps the field it covers in view.
+  const focusAt = (y: number) => {
+    setTimeout(
+      () =>
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, y + 24 - 80),
+          animated: true,
+        }),
+      250,
+    );
+  };
+  // Weeks the person chose on the date step; null means the recommended date.
+  const [userWeeks, setUserWeeks] = useState<number | null>(null);
+  // The date is only a suggestion; skipping it keeps the same pace without a target date.
+  const [useDate, setUseDate] = useState(true);
+  const sched = schedule(form, userWeeks, today(), useDate);
+  const goal = form.goal;
+  // Until the body step is filled in we can't tell, so a weight goal is assumed to have a date step.
+  const dated = goal !== "maintain" && !(sched.base && !sched.timeline);
+  const order = stepOrder(dated);
   const step = order[pos];
   const last = pos === order.length - 1;
-  const goal = form.goal;
   // Pregnancy or breastfeeding needs a doctor for any plan. An eating-disorder history rules out a deficit.
   const blocked = health.pregnant || (health.ed && goal === "lose");
   const anim = useRef(new Animated.Value(1)).current;
@@ -249,7 +407,7 @@ export default function Onboarding() {
     }).start();
   }, [step, anim, calm]);
 
-  const profile = toProfile(form);
+  const profile = toProfile(sched.form);
   const valid = typeof profile !== "string" ? profile : null;
   const target = valid ? calorieTarget(valid) : null;
 
@@ -285,6 +443,8 @@ export default function Onboarding() {
       return Alert.alert("Check your details", error);
     }
     haptic.tap();
+    Keyboard.dismiss();
+    if (step === S.body) setUserWeeks(null);
     setPos((p) => Math.min(p + 1, order.length - 1));
   };
 
@@ -312,6 +472,7 @@ export default function Onboarding() {
       hh >= 120 && hh <= 220 && ww >= 30 && ww <= 250
         ? targetOptions(g, hh, ww)[0]
         : undefined;
+    setUserWeeks(null);
     setForm((f) => ({
       ...f,
       goal: g,
@@ -374,6 +535,8 @@ export default function Onboarding() {
               onChange={set("name")}
               numeric={false}
               autoFocus
+              returnKeyType="done"
+              onSubmit={next}
             />
           </>
         );
@@ -399,6 +562,9 @@ export default function Onboarding() {
               value={form.age}
               onChange={set("age")}
               unit="years"
+              returnKeyType="done"
+              onSubmit={next}
+              onFocusAt={focusAt}
             />
           </>
         );
@@ -428,17 +594,23 @@ export default function Onboarding() {
             <Text style={styles.q}>
               {goal === "maintain" ? "Your body" : "Your body and goal"}
             </Text>
-            <Input
-              label="Height"
+            <HeightInput
               value={form.heightCm}
               onChange={set("heightCm")}
-              unit="cm"
+              onSubmit={() => weightRef.current?.focus()}
+              onFocusAt={focusAt}
             />
             <Input
               label="Current weight"
               value={form.weightKg}
               onChange={set("weightKg")}
               unit="kg"
+              inputRef={weightRef}
+              returnKeyType={goal === "maintain" ? "done" : "next"}
+              onSubmit={
+                goal === "maintain" ? next : () => targetRef.current?.focus()
+              }
+              onFocusAt={focusAt}
             />
             {guide && (
               <View style={styles.guide}>
@@ -503,7 +675,7 @@ export default function Onboarding() {
                           : "🌱"
                     }
                     title={`${o.kg} kg · ${o.label}`}
-                    sub={`${o.note} · about ${Math.ceil(Math.abs(w - o.kg) / (goal === "lose" ? 0.5 : 0.25))} weeks at ${goal === "lose" ? 0.5 : 0.25} kg/week`}
+                    sub={o.note}
                     active={+form.targetWeightKg === o.kg}
                     onPress={() => set("targetWeightKg")(String(o.kg))}
                   />
@@ -518,6 +690,10 @@ export default function Onboarding() {
                 value={form.targetWeightKg}
                 onChange={set("targetWeightKg")}
                 unit="kg"
+                inputRef={targetRef}
+                returnKeyType="done"
+                onSubmit={next}
+                onFocusAt={focusAt}
               />
             )}
             {goal === "lose" && minKg > 0 && (
@@ -560,35 +736,25 @@ export default function Onboarding() {
             ))}
           </>
         );
-      case 6:
-        return (
+      case S.when:
+        return sched.base && sched.timeline && sched.plan ? (
           <>
-            <Text style={styles.q}>Pick your pace</Text>
+            <Text style={styles.q}>Here's a date to aim for</Text>
             <Text style={[styles.sub, { marginBottom: 16 }]}>
-              {goal === "lose"
-                ? "Slower is easier to stick with."
-                : "Gaining slowly adds more muscle and less fat."}
+              Worked out from your height, weight and goal. A date is optional:
+              use it, change it, or skip it.
             </Text>
-            {(goal === "lose" ? PACE_CARDS : GAIN_PACE_CARDS).map(
-              ([v, e, t]) => {
-                const key = goal === "lose" ? "weeklyLossKg" : "weeklyGainKg";
-                const p = toProfile({ ...form, [key]: v });
-                const kcal =
-                  typeof p === "string" ? null : calorieTarget(p).kcal;
-                return (
-                  <Option
-                    key={v}
-                    emoji={e}
-                    title={t}
-                    sub={`${v} kg/week${kcal ? ` · ${kcal} kcal/day` : ""}`}
-                    active={form[key] === v}
-                    onPress={() => set(key)(v)}
-                  />
-                );
-              },
-            )}
+            <TargetDate
+              base={sched.base}
+              timeline={sched.timeline}
+              plan={sched.plan}
+              from={today()}
+              onWeeks={setUserWeeks}
+              dated={useDate}
+              onDated={setUseDate}
+            />
           </>
-        );
+        ) : null;
       case S.health:
         return (
           <>
@@ -678,6 +844,16 @@ export default function Onboarding() {
             </Text>
             <Text style={styles.kcal}>{shownKcal}</Text>
             <Text style={styles.sub}>calories a day</Text>
+            <Text
+              style={[styles.muted, { textAlign: "center", marginTop: 6 }]}
+              accessibilityLabel="How this number was worked out"
+            >
+              {target.deficit > 0
+                ? `Your body uses about ${target.tdee} kcal a day. We take off ${target.deficit}${valid.targetDate ? " to reach your date" : " for a steady pace"}.`
+                : target.surplus > 0
+                  ? `Your body uses about ${target.tdee} kcal a day. We add ${target.surplus}${valid.targetDate ? " to reach your date" : " for a steady pace"}.`
+                  : `Your body uses about ${target.tdee} kcal a day, so we keep you there.`}
+            </Text>
             <View style={styles.macroRow}>
               {[
                 ["Protein", m.protein, colors.protein],
@@ -696,8 +872,10 @@ export default function Onboarding() {
             {weeks ? (
               <View style={styles.tip}>
                 <Text style={styles.tipText}>
-                  🎯 {valid.weightKg} → {valid.targetWeightKg} kg in about{" "}
-                  {weeks} weeks
+                  🎯 {valid.weightKg} → {valid.targetWeightKg} kg{" "}
+                  {valid.targetDate
+                    ? `by ${formatDay(valid.targetDate)}`
+                    : `in about ${weeks} weeks`}
                 </Text>
               </View>
             ) : valid.goal === "maintain" ? (
@@ -737,11 +915,12 @@ export default function Onboarding() {
   };
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+    <SafeAreaView
+      style={styles.screen}
+      // The keyboard already sits below the footer, so drop the home-bar gap while it is open.
+      edges={keyboardOpen ? ["top", "left", "right"] : undefined}
+    >
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         {pos > 0 && (
           <View style={styles.top}>
             <Pressable
@@ -779,8 +958,10 @@ export default function Onboarding() {
           </View>
         )}
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
           <Animated.View
             style={{
@@ -798,7 +979,7 @@ export default function Onboarding() {
             {body()}
           </Animated.View>
         </ScrollView>
-        <View style={styles.footer}>
+        <View style={[styles.footer, keyboardOpen && styles.footerKeyboard]}>
           <Pressable
             style={[
               styles.cta,
@@ -908,6 +1089,28 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, fontSize: 20, paddingVertical: 14, color: colors.text },
   unit: { fontSize: 15, color: colors.muted, fontWeight: "600" },
+  unitRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  unitChip: {
+    borderWidth: 1,
+    borderColor: colors.track,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    minHeight: 32,
+    justifyContent: "center",
+  },
+  unitChipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  unitChipText: { fontSize: 13, fontWeight: "700", color: colors.text },
+  cmHint: {
+    marginTop: -8,
+    marginBottom: 12,
+    fontSize: 13,
+    color: colors.muted,
+  },
   tip: {
     backgroundColor: colors.tint,
     padding: 14,
@@ -975,6 +1178,7 @@ const styles = StyleSheet.create({
   macroDot: { width: 10, height: 10, borderRadius: 5, marginBottom: 6 },
   macroVal: { fontSize: 20, fontWeight: "800", color: colors.text },
   footer: { padding: 20 },
+  footerKeyboard: { paddingTop: 10, paddingBottom: 10 },
   cta: {
     backgroundColor: colors.primary,
     borderRadius: 28,

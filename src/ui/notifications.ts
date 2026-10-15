@@ -70,6 +70,7 @@ async function ensureChannel() {
 
 /** Creates the Android channel and asks for permission if needed. Returns whether we may notify. */
 export async function ensurePermission(): Promise<boolean> {
+  if (Platform.OS === "web") return false;
   await ensureChannel();
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
@@ -84,6 +85,7 @@ let queue: Promise<void> = Promise.resolve();
  * calls are serialized and failures are swallowed so reminders never break the app.
  */
 export function syncReminders(db: SQLiteDatabase): Promise<void> {
+  if (Platform.OS === "web") return Promise.resolve();
   queue = queue.then(async () => {
     try {
       const prefs = await loadReminderPrefs(db);

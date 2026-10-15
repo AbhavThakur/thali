@@ -3,6 +3,13 @@ import {
   maxGainWeightKg,
   minHealthyWeightKg,
 } from "../domain/energy.ts";
+import {
+  planForWeeks,
+  timelineFor,
+  weeksForRate,
+  type Timeline,
+  type TimelinePlan,
+} from "../domain/timeline.ts";
 import type {
   ActivityLevel,
   DietType,
@@ -28,16 +35,6 @@ export const DIET: [DietType, string][] = [
   ["non_vegetarian", "Non-veg"],
   ["vegan", "Vegan"],
   ["jain", "Jain"],
-];
-export const PACE: [number, string][] = [
-  [0.25, "0.25 kg/wk"],
-  [0.5, "0.5 kg/wk"],
-  [0.75, "0.75 kg/wk"],
-];
-/** Gaining faster than this mostly adds fat. */
-export const GAIN_PACE: [number, string][] = [
-  [0.25, "0.25 kg/wk"],
-  [0.5, "0.5 kg/wk"],
 ];
 export const GOAL_LABEL: Record<Goal, string> = {
   lose: "Lose weight",
@@ -123,4 +120,57 @@ export function toProfile(f: Form): Profile | string {
   if (n.targetWeightKg < minKg)
     return `For your height, the lowest healthy target is ${minKg} kg (BMI 18.5).`;
   return { ...f, name: f.name.trim(), ...n };
+}
+
+export type Scheduled = {
+  /** The form with pace and date filled in from the chosen number of weeks. */
+  form: Form;
+  /** The profile before the schedule is applied; null while the form is incomplete. */
+  base: Profile | null;
+  /** Null when there is nothing to schedule: staying healthy, at the target, or gaining isn't advised. */
+  timeline: Timeline | null;
+  plan: TimelinePlan | null;
+};
+
+/** The pace and the date go together: pick one and the other follows. `weeks` null means the recommended date. */
+export function schedule(
+  form: Form,
+  weeks: number | null,
+  from: string,
+  /** false: use the pace but don't keep a target date. */
+  withDate = true,
+): Scheduled {
+  const base = toProfile(form);
+  if (typeof base === "string")
+    return { form, base: null, timeline: null, plan: null };
+  const timeline = timelineFor(base);
+  const plan = timeline
+    ? planForWeeks(base, weeks ?? timeline.recommendedWeeks, from)
+    : null;
+  if (!timeline || !plan)
+    return {
+      form: { ...form, targetDate: undefined },
+      base,
+      timeline: null,
+      plan: null,
+    };
+  return {
+    form: {
+      ...form,
+      weeklyLossKg: plan.profile.weeklyLossKg,
+      weeklyGainKg: plan.profile.weeklyGainKg,
+      targetDate: withDate ? plan.date : undefined,
+    },
+    base,
+    timeline,
+    plan,
+  };
+}
+
+/** The number of weeks a saved profile's pace takes, so editing it keeps the same pace. */
+export function savedWeeks(p: Profile): number | null {
+  const t = timelineFor(p);
+  return t
+    ? weeksForRate(t, p.goal === "lose" ? p.weeklyLossKg : p.weeklyGainKg)
+    : null;
 }

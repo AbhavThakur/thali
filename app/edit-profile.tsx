@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
   Pressable,
   ScrollView,
@@ -22,14 +23,15 @@ import {
   ACTIVITY,
   DIET,
   EMPTY,
-  GAIN_PACE,
   GOAL_LABEL,
-  PACE,
   SEX,
+  savedWeeks,
+  schedule,
   toForm,
   toProfile,
   type Form,
 } from "../src/ui/profileForm.ts";
+import { TargetDate } from "../src/ui/TargetDate.tsx";
 import { card, colors } from "../src/ui/theme.ts";
 
 function Chips<T extends string | number>({
@@ -90,6 +92,9 @@ export default function EditProfile() {
   const { person, rename } = usePeople();
   const [form, setForm] = useState<Form>(EMPTY);
   const [saved, setSaved] = useState<Profile | null>(null);
+  // Weeks chosen for the target date; null means the recommended date.
+  const [userWeeks, setUserWeeks] = useState<number | null>(null);
+  const [useDate, setUseDate] = useState(true);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{
     before: number | null;
@@ -103,6 +108,9 @@ export default function EditProfile() {
         if (!p) return;
         setSaved(p);
         setForm(toForm(p));
+        // Start from the saved pace, so opening and saving doesn't change anyone's plan.
+        setUserWeeks(savedWeeks(p));
+        setUseDate(!!p.targetDate);
       });
     }, [db]),
   );
@@ -115,11 +123,13 @@ export default function EditProfile() {
   const h = +form.heightCm;
   const w = +form.weightKg;
   const sized = h >= 120 && h <= 220 && w >= 30 && w <= 250;
+  const sched = schedule(form, userWeeks, today(), useDate);
   const options = sized ? targetOptions(form.goal, h, w) : [];
   const advice = sized ? goalAdvice(form.goal, h, w) : null;
 
   const pickGoal = (goal: Goal) => {
     const first = sized ? targetOptions(goal, h, w)[0] : undefined;
+    setUserWeeks(null);
     setForm((f) => ({
       ...f,
       goal,
@@ -133,7 +143,7 @@ export default function EditProfile() {
   };
 
   const onSave = async () => {
-    const p = toProfile(form);
+    const p = toProfile(sched.form);
     if (typeof p === "string") {
       haptic.warn();
       return Alert.alert("Check your details", p);
@@ -161,157 +171,160 @@ export default function EditProfile() {
   };
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={{ paddingVertical: 16 }}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View style={card}>
-        <Field
-          label="Name"
-          value={form.name}
-          onChange={set("name")}
-          numeric={false}
-        />
-        <Text style={styles.label}>My goal</Text>
-        <Chips
-          items={GOALS.map((g) => [g.id, `${g.emoji} ${GOAL_LABEL[g.id]}`])}
-          value={form.goal}
-          onChange={pickGoal}
-        />
-        {advice ? (
-          <Text
-            style={[styles.muted, { color: colors.warnText, marginTop: 8 }]}
-          >
-            {advice}
-          </Text>
-        ) : null}
-
-        <Text style={styles.label}>Sex</Text>
-        <Chips items={SEX} value={form.sex} onChange={set("sex")} />
-        <View style={styles.row}>
-          <Field label="Age" value={form.age} onChange={set("age")} />
-          <Field
-            label="Height (cm)"
-            value={form.heightCm}
-            onChange={set("heightCm")}
-          />
-        </View>
-        <View style={styles.row}>
-          <Field
-            label="Weight (kg)"
-            value={form.weightKg}
-            onChange={set("weightKg")}
-          />
-          {form.goal !== "maintain" && (
-            <Field
-              label="Target (kg)"
-              value={form.targetWeightKg}
-              onChange={set("targetWeightKg")}
-            />
-          )}
-        </View>
-        {form.goal !== "maintain" && options.length > 0 && (
-          <>
-            <Text style={styles.label}>Suggested targets</Text>
-            <Chips
-              items={options.map((o) => [o.kg, `${o.kg} kg`])}
-              value={+form.targetWeightKg}
-              onChange={(kg) => set("targetWeightKg")(String(kg))}
-            />
-          </>
-        )}
-        <Text style={styles.label}>Activity</Text>
-        <Chips
-          items={ACTIVITY}
-          value={form.activity}
-          onChange={set("activity")}
-        />
-        <Text style={styles.label}>Diet</Text>
-        <Chips items={DIET} value={form.dietType} onChange={set("dietType")} />
-        {form.goal === "lose" && (
-          <>
-            <Text style={styles.label}>Pace</Text>
-            <Chips
-              items={PACE}
-              value={form.weeklyLossKg}
-              onChange={set("weeklyLossKg")}
-            />
-          </>
-        )}
-        {(form.goal === "gain" || form.goal === "muscle") && (
-          <>
-            <Text style={styles.label}>Pace</Text>
-            <Chips
-              items={GAIN_PACE}
-              value={form.weeklyGainKg}
-              onChange={set("weeklyGainKg")}
-            />
-          </>
-        )}
-
-        <Pressable
-          onPress={onSave}
-          disabled={saving}
-          style={[styles.save, saving && { opacity: 0.7 }]}
-          accessibilityRole="button"
-        >
-          {saving ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.saveText}>Save</Text>
-          )}
-        </Pressable>
-        <Text style={[styles.muted, { marginTop: 10 }]}>
-          Not medical advice. If you are pregnant, breastfeeding, diabetic or on
-          medication, check with a doctor before following a plan.
-        </Text>
-      </View>
-
-      <Modal
-        visible={!!result}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setResult(null)}
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={{ paddingVertical: 16 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
-        <View style={styles.backdrop}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetEmoji}>🎉</Text>
-            <Text style={styles.title}>
-              {result?.before == null ? "Your plan is ready" : "Profile saved"}
-            </Text>
-            <Text style={styles.big}>{result?.after} kcal / day</Text>
-            {result?.before != null && result.before !== result.after && (
-              <Text style={styles.muted}>Was {result.before} kcal</Text>
-            )}
-            <Text style={[styles.muted, { marginTop: 8 }]}>
-              Protein {result?.m.protein}g · Carbs {result?.m.carbs}g · Fats{" "}
-              {result?.m.fat}g
-            </Text>
-            <Pressable
-              style={[styles.save, { alignSelf: "stretch" }]}
-              onPress={() => {
-                setResult(null);
-                router.dismissTo("/plan");
-              }}
-              accessibilityRole="button"
+        <View style={card}>
+          <Field
+            label="Name"
+            value={form.name}
+            onChange={set("name")}
+            numeric={false}
+          />
+          <Text style={styles.label}>My goal</Text>
+          <Chips
+            items={GOALS.map((g) => [g.id, `${g.emoji} ${GOAL_LABEL[g.id]}`])}
+            value={form.goal}
+            onChange={pickGoal}
+          />
+          {advice ? (
+            <Text
+              style={[styles.muted, { color: colors.warnText, marginTop: 8 }]}
             >
-              <Text style={styles.saveText}>See today's plan</Text>
-            </Pressable>
-            <Pressable
-              hitSlop={8}
-              onPress={() => {
-                setResult(null);
-                router.back();
-              }}
-              accessibilityRole="button"
-            >
-              <Text style={styles.done}>Done</Text>
-            </Pressable>
+              {advice}
+            </Text>
+          ) : null}
+
+          <Text style={styles.label}>Sex</Text>
+          <Chips items={SEX} value={form.sex} onChange={set("sex")} />
+          <View style={styles.row}>
+            <Field label="Age" value={form.age} onChange={set("age")} />
+            <Field
+              label="Height (cm)"
+              value={form.heightCm}
+              onChange={set("heightCm")}
+            />
           </View>
+          <View style={styles.row}>
+            <Field
+              label="Weight (kg)"
+              value={form.weightKg}
+              onChange={set("weightKg")}
+            />
+            {form.goal !== "maintain" && (
+              <Field
+                label="Target (kg)"
+                value={form.targetWeightKg}
+                onChange={set("targetWeightKg")}
+              />
+            )}
+          </View>
+          {form.goal !== "maintain" && options.length > 0 && (
+            <>
+              <Text style={styles.label}>Suggested targets</Text>
+              <Chips
+                items={options.map((o) => [o.kg, `${o.kg} kg`])}
+                value={+form.targetWeightKg}
+                onChange={(kg) => set("targetWeightKg")(String(kg))}
+              />
+            </>
+          )}
+          <Text style={styles.label}>Activity</Text>
+          <Chips
+            items={ACTIVITY}
+            value={form.activity}
+            onChange={set("activity")}
+          />
+          <Text style={styles.label}>Diet</Text>
+          <Chips
+            items={DIET}
+            value={form.dietType}
+            onChange={set("dietType")}
+          />
+          {sched.base && sched.timeline && sched.plan && (
+            <>
+              <Text style={styles.label}>Date to reach your target</Text>
+              <TargetDate
+                base={sched.base}
+                timeline={sched.timeline}
+                plan={sched.plan}
+                from={today()}
+                onWeeks={setUserWeeks}
+                dated={useDate}
+                onDated={setUseDate}
+              />
+            </>
+          )}
+
+          <Pressable
+            onPress={onSave}
+            disabled={saving}
+            style={[styles.save, saving && { opacity: 0.7 }]}
+            accessibilityRole="button"
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.saveText}>Save</Text>
+            )}
+          </Pressable>
+          <Text style={[styles.muted, { marginTop: 10 }]}>
+            Not medical advice. If you are pregnant, breastfeeding, diabetic or
+            on medication, check with a doctor before following a plan.
+          </Text>
         </View>
-      </Modal>
-    </ScrollView>
+
+        <Modal
+          visible={!!result}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setResult(null)}
+        >
+          <View style={styles.backdrop}>
+            <View style={styles.sheet}>
+              <Text style={styles.sheetEmoji}>🎉</Text>
+              <Text style={styles.title}>
+                {result?.before == null
+                  ? "Your plan is ready"
+                  : "Profile saved"}
+              </Text>
+              <Text style={styles.big}>{result?.after} kcal / day</Text>
+              {result?.before != null && result.before !== result.after && (
+                <Text style={styles.muted}>Was {result.before} kcal</Text>
+              )}
+              <Text style={[styles.muted, { marginTop: 8 }]}>
+                Protein {result?.m.protein}g · Carbs {result?.m.carbs}g · Fats{" "}
+                {result?.m.fat}g
+              </Text>
+              <Pressable
+                style={[styles.save, { alignSelf: "stretch" }]}
+                onPress={() => {
+                  setResult(null);
+                  router.dismissTo("/plan");
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={styles.saveText}>See today's plan</Text>
+              </Pressable>
+              <Pressable
+                hitSlop={8}
+                onPress={() => {
+                  setResult(null);
+                  router.back();
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={styles.done}>Done</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

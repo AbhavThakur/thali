@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -132,7 +133,10 @@ export default function TodayScreen() {
         loadReminderPrefs(db),
         getSetting(db, "reminder_prompt"),
       ]).then(([prefs, seen]) =>
-        setAskReminders(!prefs.enabled && seen !== "done"),
+        // Browsers can't schedule reminders, so don't offer them there.
+        setAskReminders(
+          Platform.OS !== "web" && !prefs.enabled && seen !== "done",
+        ),
       );
     }, [db]),
   );

@@ -13,6 +13,7 @@ import { logWeight, today } from "../../src/db/db.ts";
 import { syncReminders } from "../../src/ui/notifications.ts";
 import { calorieTarget } from "../../src/domain/energy.ts";
 import { ACHIEVEMENTS, goalKg, progressKg } from "../../src/domain/rewards.ts";
+import { formatDay } from "../../src/domain/timeline.ts";
 import { useProgress } from "../../src/hooks/useProgress.ts";
 import { Loading } from "../../src/ui/Loading.tsx";
 import { PromptSheet } from "../../src/ui/Sheet.tsx";
@@ -98,6 +99,13 @@ export default function ProgressScreen() {
             ? `Staying steady: ${drift > 0 ? "+" : ""}${drift.toFixed(1)} kg since you started`
             : `${moved > 0 ? `${moved.toFixed(1)} kg ${profile.goal === "lose" ? "lost" : "gained"} · ` : ""}${Math.round(pct * 100)}% of your goal${weeksLeft ? ` · about ${weeksLeft} weeks to go` : ""}`}
         </Text>
+        {!steady && profile.targetDate && pct < 1 ? (
+          <Text style={[styles.muted, { marginTop: 4 }]}>
+            {profile.targetDate < todayStr
+              ? `Your target date (${formatDay(profile.targetDate)}) has passed. Pick a new one in Me → Goal and body.`
+              : `Target date: ${formatDay(profile.targetDate)}`}
+          </Text>
+        ) : null}
         <View style={{ marginTop: 12 }}>
           <WeightChart
             points={weights}

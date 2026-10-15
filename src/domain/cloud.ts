@@ -4,6 +4,15 @@
  * The anon key is meant to be public: the security comes from the policies in supabase/schema.sql.
  */
 
+import {
+  isInviteCode,
+  normalizeInviteCode,
+  type Family,
+  type FamilyDay,
+  type FamilyMember,
+  type Kudos,
+} from "./family.ts";
+
 export type CloudConfig = { url: string; anonKey: string };
 
 export type CloudSession = {
@@ -43,6 +52,10 @@ const CODE = /^\d{6,10}$/;
 export const isEmail = (s: string) => EMAIL.test(s.trim());
 export const isCode = (s: string) => CODE.test(s.trim());
 
+const FAMILY_MISSING = {
+  404: "The family functions are missing. Run the latest supabase/schema.sql.",
+};
+
 /** Recovery codes are 24 hex characters; people may type dashes, spaces or lower case. */
 export const normalizeRecoveryCode = (s: string) =>
   s.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
@@ -58,6 +71,51 @@ export const hasNoEmail = (s: CloudSession) => s.email === "";
 /** True when the access token has under a minute left. */
 export const isExpiring = (s: CloudSession, nowMs: number) =>
   s.expiresAt - nowMs / 1000 < 60;
+
+/** The database functions raise errors like "thali:That invite code isn't right."; this returns the readable part. */
+function serverMessage(body: string): string | undefined {
+  try {
+    const m = (JSON.parse(body) as { message?: unknown }).message;
+    return typeof m === "string" && m.startsWith("thali:")
+      ? m.slice(6)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+type OverviewReply = {
+  me: string;
+  family: { id: string; name: string; invite_code: string };
+  members: {
+    user_id: string;
+    name: string;
+    emoji: string;
+    share_weight: boolean;
+    joined_on: string;
+    streak: number;
+  }[];
+} | null;
+
+function toFamily(r: OverviewReply): Family | null {
+  if (!r) return null;
+  return {
+    id: r.family.id,
+    name: r.family.name,
+    inviteCode: r.family.invite_code,
+    me: r.me,
+    members: r.members.map(
+      (m): FamilyMember => ({
+        userId: m.user_id,
+        name: m.name,
+        emoji: m.emoji,
+        shareWeight: m.share_weight,
+        joinedOn: m.joined_on,
+        streak: m.streak,
+      }),
+    ),
+  };
+}
 
 export function createCloud(
   cfg: CloudConfig,
@@ -92,6 +150,7 @@ export function createCloud(
     const text = await res.text();
     if (!res.ok) {
       const message =
+        serverMessage(text) ??
         friendly[res.status] ??
         (res.status === 401
           ? "Your sign-in has expired. Please sign in again."
@@ -256,6 +315,221 @@ export function createCloud(
             data: r.data,
           }
         : null;
+    },
+
+    /** My family and its members, or null when I'm not in one. */
+    async familyOverview(s: CloudSession): Promise<Family | null> {
+      return toFamily(
+        await call<OverviewReply>(
+          "/rest/v1/rpc/family_overview",
+          { method: "POST", token: s.accessToken, body: {} },
+          FAMILY_MISSING,
+        ),
+      );
+    },
+
+    async createFamily(
+      s: CloudSession,
+      familyName: string,
+      myName: string,
+      myEmoji: string,
+    ): Promise<Family> {
+      const f = toFamily(
+        await call<OverviewReply>(
+          "/rest/v1/rpc/create_family",
+          {
+            method: "POST",
+            token: s.accessToken,
+            body: {
+              family_name: familyName,
+              my_name: myName,
+              my_emoji: myEmoji,
+            },
+          },
+          FAMILY_MISSING,
+        ),
+      );
+      if (!f) throw new CloudError("Could not create the family.");
+      return f;
+    },
+
+    async joinFamily(
+      s: CloudSession,
+      code: string,
+      myName: string,
+      myEmoji: string,
+    ): Promise<Family> {
+      if (!isInviteCode(code))
+        throw new CloudError("An invite code has 8 letters and numbers.");
+      const f = toFamily(
+        await call<OverviewReply>(
+          "/rest/v1/rpc/join_family",
+          {
+            method: "POST",
+            token: s.accessToken,
+            body: {
+              code: normalizeInviteCode(code),
+              my_name: myName,
+              my_emoji: myEmoji,
+            },
+          },
+          FAMILY_MISSING,
+        ),
+      );
+      if (!f) throw new CloudError("Could not join the family.");
+      return f;
+    },
+
+    async leaveFamily(s: CloudSession) {
+      await call(
+        "/rest/v1/rpc/leave_family",
+        { method: "POST", token: s.accessToken, body: {} },
+        FAMILY_MISSING,
+      );
+    },
+
+    /** Replaces the invite code; the old one stops working. */
+    async newInviteCode(s: CloudSession): Promise<string> {
+      return call<string>(
+        "/rest/v1/rpc/new_invite_code",
+        { method: "POST", token: s.accessToken, body: {} },
+        FAMILY_MISSING,
+      );
+    },
+
+    async updateMember(
+      s: CloudSession,
+      me: { name: string; emoji: string; shareWeight: boolean; streak: number },
+    ) {
+      await call(
+        "/rest/v1/rpc/update_member",
+        {
+          method: "POST",
+          token: s.accessToken,
+          body: {
+            my_name: me.name,
+            my_emoji: me.emoji,
+            my_share_weight: me.shareWeight,
+            my_streak: me.streak,
+          },
+        },
+        FAMILY_MISSING,
+      );
+    },
+
+    /** Shares my daily summaries; the server drops the weight unless I've allowed it. */
+    async publishDays(s: CloudSession, days: FamilyDay[]) {
+      await call(
+        "/rest/v1/rpc/publish_days",
+        {
+          method: "POST",
+          token: s.accessToken,
+          body: {
+            days: days.map((d) => ({
+              day: d.day,
+              logged: d.logged,
+              stars: d.stars,
+              meals: d.meals,
+              water_ok: d.waterOk,
+              weight_kg: d.weightKg,
+            })),
+          },
+        },
+        FAMILY_MISSING,
+      );
+    },
+
+    /** Everyone's shared days since `from` (yyyy-mm-dd), newest first, grouped by person. */
+    async familyDays(
+      s: CloudSession,
+      from: string,
+    ): Promise<Map<string, FamilyDay[]>> {
+      const rows = await call<
+        {
+          user_id: string;
+          day: string;
+          logged: boolean;
+          stars: number;
+          meals: number;
+          water_ok: boolean;
+          weight_kg: number | null;
+        }[]
+      >(
+        `/rest/v1/family_days?day=gte.${encodeURIComponent(from)}&select=user_id,day,logged,stars,meals,water_ok,weight_kg&order=day.desc&limit=1000`,
+        { token: s.accessToken },
+        FAMILY_MISSING,
+      );
+      const byUser = new Map<string, FamilyDay[]>();
+      for (const r of rows) {
+        const list = byUser.get(r.user_id) ?? [];
+        list.push({
+          day: r.day,
+          logged: r.logged,
+          stars: r.stars,
+          meals: r.meals,
+          waterOk: r.water_ok,
+          weightKg: r.weight_kg == null ? null : +r.weight_kg,
+        });
+        byUser.set(r.user_id, list);
+      }
+      return byUser;
+    },
+
+    async sendKudos(
+      s: CloudSession,
+      toUser: string,
+      emoji: string,
+      message: string,
+    ) {
+      await call(
+        "/rest/v1/rpc/send_kudos",
+        {
+          method: "POST",
+          token: s.accessToken,
+          body: {
+            to_member: toUser,
+            kudos_emoji: emoji,
+            kudos_message: message.trim().slice(0, 80),
+          },
+        },
+        FAMILY_MISSING,
+      );
+    },
+
+    /** Cheers sent to me, newest first. */
+    async myKudos(s: CloudSession, me: string): Promise<Kudos[]> {
+      const rows = await call<
+        {
+          id: number;
+          from_user: string;
+          to_user: string;
+          emoji: string;
+          message: string;
+          created_at: string;
+          seen_at: string | null;
+        }[]
+      >(
+        `/rest/v1/kudos?to_user=eq.${encodeURIComponent(me)}&select=id,from_user,to_user,emoji,message,created_at,seen_at&order=created_at.desc&limit=30`,
+        { token: s.accessToken },
+        FAMILY_MISSING,
+      );
+      return rows.map((r) => ({
+        id: r.id,
+        fromUser: r.from_user,
+        toUser: r.to_user,
+        emoji: r.emoji,
+        message: r.message,
+        createdAt: r.created_at,
+        seen: r.seen_at != null,
+      }));
+    },
+
+    async markKudosSeen(s: CloudSession) {
+      await call(
+        "/rest/v1/rpc/mark_kudos_seen",
+        { method: "POST", token: s.accessToken, body: {} },
+        FAMILY_MISSING,
+      );
     },
   };
 }

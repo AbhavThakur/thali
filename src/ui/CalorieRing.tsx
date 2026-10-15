@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import Animated, {
   Easing,
   useAnimatedProps,
@@ -37,6 +37,16 @@ export function CalorieRing({
   const animatedProps = useAnimatedProps(() => ({
     strokeDashoffset: c * (1 - progress.value),
   }));
+  const ring = {
+    cx: mid,
+    cy: mid,
+    r,
+    stroke: color,
+    strokeWidth: stroke,
+    fill: "none",
+    strokeDasharray: `${c} ${c}`,
+    strokeLinecap: "round" as const,
+  };
 
   return (
     <View style={[styles.wrap, { width: size, height: size }]}>
@@ -49,19 +59,21 @@ export function CalorieRing({
           strokeWidth={stroke}
           fill="none"
         />
-        <AnimatedCircle
-          cx={mid}
-          cy={mid}
-          r={r}
-          stroke={color}
-          strokeWidth={stroke}
-          fill="none"
-          strokeDasharray={`${c} ${c}`}
-          animatedProps={animatedProps}
-          strokeLinecap="round"
-          rotation={-90}
-          origin={`${mid}, ${mid}`}
-        />
+        {Platform.OS === "web" ? (
+          // reanimated's animated SVG props and the native-only rotation props don't work on web.
+          <Circle
+            {...ring}
+            strokeDashoffset={c * (1 - pct)}
+            transform={`rotate(-90 ${mid} ${mid})`}
+          />
+        ) : (
+          <AnimatedCircle
+            {...ring}
+            rotation={-90}
+            origin={`${mid}, ${mid}`}
+            animatedProps={animatedProps}
+          />
+        )}
       </Svg>
       <Text style={styles.big}>{Math.round(consumed).toLocaleString()}</Text>
       <Text style={styles.small}>of {target.toLocaleString()} kcal</Text>

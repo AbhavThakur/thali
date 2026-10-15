@@ -1,4 +1,4 @@
-import Storage from "expo-sqlite/kv-store";
+import Storage from "./kv";
 import { Appearance } from "react-native";
 
 export type ThemeMode = "system" | "light" | "dark";

@@ -16,10 +16,13 @@ import {
   type LogRow,
 } from "../db/db.ts";
 import { syncReminders } from "../ui/notifications.ts";
+import { publishFamily } from "../ui/familySync.ts";
+import { usePeople } from "../ui/People.tsx";
 
 /** Profile, targets and today's logs; reloads whenever the screen gains focus. */
 export function useToday() {
   const db = useSQLiteContext();
+  const { people } = usePeople();
   const date = today();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
@@ -36,7 +39,8 @@ export function useToday() {
     setWater(await getWater(db, date));
     setLoaded(true);
     syncReminders(db);
-  }, [db, date]);
+    void publishFamily(people);
+  }, [db, date, people]);
 
   useFocusEffect(
     useCallback(() => {

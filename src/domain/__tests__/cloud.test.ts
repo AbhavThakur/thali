@@ -221,3 +221,105 @@ test("a network failure becomes a friendly error", async () => {
       /internet connection/.test(e.message) && e.status === undefined,
   );
 });
+
+const overview = {
+  me: "u1",
+  family: { id: "f1", name: "Sharma", invite_code: "K7MQ4X9R" },
+  members: [
+    {
+      user_id: "u1",
+      name: "Asha",
+      emoji: "👩",
+      share_weight: false,
+      joined_on: "2026-10-01",
+      streak: 4,
+    },
+  ],
+};
+
+test("joining a family sends the cleaned code and maps the reply", async () => {
+  const { f, calls } = fake([{ body: overview }]);
+  const fam = await createCloud(cfg, f).joinFamily(
+    session,
+    "k7mq-4x9r",
+    "Asha",
+    "👩",
+  );
+  assert.ok(calls[0].url.endsWith("/rest/v1/rpc/join_family"));
+  assert.deepEqual(JSON.parse(calls[0].body ?? "{}"), {
+    code: "K7MQ4X9R",
+    my_name: "Asha",
+    my_emoji: "👩",
+  });
+  assert.equal(fam.inviteCode, "K7MQ4X9R");
+  assert.equal(fam.me, "u1");
+  assert.deepEqual(fam.members[0], {
+    userId: "u1",
+    name: "Asha",
+    emoji: "👩",
+    shareWeight: false,
+    joinedOn: "2026-10-01",
+    streak: 4,
+  });
+});
+
+test("a bad invite code never reaches the server", async () => {
+  const { f, calls } = fake([]);
+  await assert.rejects(
+    createCloud(cfg, f).joinFamily(session, "12345", "Asha", "🙂"),
+    /8 letters and numbers/,
+  );
+  assert.equal(calls.length, 0);
+});
+
+test("no family gives null, and server messages come through", async () => {
+  assert.equal(
+    await createCloud(cfg, fake([{ body: null }]).f).familyOverview(session),
+    null,
+  );
+  const { f } = fake([
+    { status: 400, body: { message: "thali:This family is full (12 people)." } },
+  ]);
+  await assert.rejects(
+    createCloud(cfg, f).joinFamily(session, "K7MQ4X9R", "Asha", "🙂"),
+    (e: CloudError) => e.message === "This family is full (12 people).",
+  );
+  const other = fake([{ status: 400, body: { message: "duplicate key value" } }]);
+  await assert.rejects(
+    createCloud(cfg, other.f).leaveFamily(session),
+    (e: CloudError) => !/duplicate/.test(e.message),
+  );
+});
+
+test("sharing days sends effort only and kudos are trimmed to 80 characters", async () => {
+  const { f, calls } = fake([{}, {}]);
+  const cloud = createCloud(cfg, f);
+  await cloud.publishDays(session, [
+    { day: "2026-10-14", logged: true, stars: 2, meals: 3, waterOk: true, weightKg: null },
+  ]);
+  assert.deepEqual(JSON.parse(calls[0].body ?? "{}"), {
+    days: [
+      { day: "2026-10-14", logged: true, stars: 2, meals: 3, water_ok: true, weight_kg: null },
+    ],
+  });
+  await cloud.sendKudos(session, "u2", "🔥", "x".repeat(200));
+  assert.equal(JSON.parse(calls[1].body ?? "{}").kudos_message.length, 80);
+});
+
+test("shared days are grouped by person", async () => {
+  const row = (user_id: string, day: string, weight_kg: number | null) => ({
+    user_id,
+    day,
+    logged: true,
+    stars: 1,
+    meals: 2,
+    water_ok: false,
+    weight_kg,
+  });
+  const { f } = fake([
+    { body: [row("a", "2026-10-14", null), row("b", "2026-10-14", 61.5), row("a", "2026-10-13", null)] },
+  ]);
+  const byUser = await createCloud(cfg, f).familyDays(session, "2026-09-01");
+  assert.equal(byUser.get("a")?.length, 2);
+  assert.equal(byUser.get("b")?.[0].weightKg, 61.5);
+});
