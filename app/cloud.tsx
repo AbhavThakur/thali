@@ -5,6 +5,7 @@ import {
   Alert,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
@@ -13,8 +14,11 @@ import {
 } from "react-native";
 import {
   CloudError,
+  formatRecoveryCode,
+  hasNoEmail,
   isCode,
   isEmail,
+  isRecoveryCode,
   type CloudSession,
 } from "../src/domain/cloud.ts";
 import {
@@ -24,10 +28,14 @@ import {
   getCloud,
   lastBackupAt,
   loadSession,
+  newRecoveryCode,
   restoreAll,
+  savedRecoveryCode,
   saveSession,
   setAutoBackup,
+  signInWithRecoveryCode,
   signOut,
+  startWithoutEmail,
 } from "../src/ui/cloudSync.ts";
 import { haptic } from "../src/ui/haptics.ts";
 import { usePeople } from "../src/ui/People.tsx";
@@ -50,6 +58,8 @@ export default function Cloud() {
   const [error, setError] = useState<string | null>(null);
   const [auto, setAuto] = useState(autoBackupOn);
   const [last, setLast] = useState(lastBackupAt);
+  const [recovery, setRecovery] = useState(savedRecoveryCode);
+  const [typedCode, setTypedCode] = useState("");
 
   // Runs a cloud action with one busy flag and one place for errors.
   const run = async (fn: () => Promise<void>) => {
@@ -82,6 +92,59 @@ export default function Cloud() {
       setCodeSent(false);
       haptic.success();
     });
+
+  const startNoEmail = () =>
+    run(async () => {
+      const c = await startWithoutEmail();
+      setRecovery(c);
+      setSession(loadSession());
+      haptic.success();
+    });
+
+  const remakeCode = () =>
+    Alert.alert(
+      "Make a new recovery code?",
+      "The old code stops working. Save the new one.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Make new code",
+          onPress: () =>
+            run(async () => {
+              setRecovery(await newRecoveryCode());
+              haptic.success();
+            }),
+        },
+      ],
+    );
+
+  const restoreWithCode = () =>
+    Alert.alert(
+      "Restore with this code?",
+      "This replaces the data on this phone with the backup that belongs to the code.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Restore",
+          style: "destructive",
+          onPress: () =>
+            run(async () => {
+              const moved = await signInWithRecoveryCode(typedCode);
+              setSession(loadSession());
+              setRecovery(savedRecoveryCode());
+              if (!moved) {
+                toast("That code has no backup yet");
+                return;
+              }
+              const r = await restoreAll(people);
+              replaceAll(r.people);
+              haptic.success();
+              toast(`Restored ${r.restored}`);
+              router.replace("/");
+            }),
+        },
+      ],
+    );
 
   const backup = () =>
     run(async () => {
@@ -145,8 +208,9 @@ export default function Cloud() {
       keyboardShouldPersistTaps="handled"
     >
       {!session ? (
+        <>
         <View style={card}>
-          <Text style={styles.title}>Sign in to back up</Text>
+          <Text style={styles.title}>Sign in with email</Text>
           <Text style={styles.body}>
             We email you a code, so there is no password to remember. Your
             backup is private to your account.
@@ -213,11 +277,55 @@ export default function Cloud() {
             </Pressable>
           ) : null}
         </View>
+
+        <View style={card}>
+          <Text style={styles.title}>No email? Use a recovery code</Text>
+          <Text style={styles.body}>
+            Thali makes a private account for this phone and a random recovery
+            code. Save the code: it is the only way to get your backup back on a
+            new phone.
+          </Text>
+          <Pressable
+            style={[styles.secondary, busy && { opacity: 0.5 }]}
+            disabled={busy}
+            onPress={startNoEmail}
+            accessibilityRole="button"
+          >
+            <Text style={styles.secondaryText}>Start without email</Text>
+          </Pressable>
+          <Text style={styles.label}>Already have a code? Enter it</Text>
+          <TextInput
+            style={styles.input}
+            value={typedCode}
+            onChangeText={setTypedCode}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+            placeholderTextColor={colors.muted}
+            accessibilityLabel="Recovery code"
+          />
+          <Pressable
+            style={[
+              styles.secondary,
+              (busy || !isRecoveryCode(typedCode)) && { opacity: 0.5 },
+            ]}
+            disabled={busy || !isRecoveryCode(typedCode)}
+            onPress={restoreWithCode}
+            accessibilityRole="button"
+          >
+            <Text style={styles.secondaryText}>Restore with this code</Text>
+          </Pressable>
+        </View>
+        </>
       ) : (
         <>
           <View style={card}>
-            <Text style={styles.title}>Signed in</Text>
-            <Text style={styles.body}>{session.email}</Text>
+            <Text style={styles.title}>
+              {hasNoEmail(session) ? "Signed in without email" : "Signed in"}
+            </Text>
+            {hasNoEmail(session) ? null : (
+              <Text style={styles.body}>{session.email}</Text>
+            )}
             <Text style={[styles.muted, { marginTop: 4 }]}>
               {last
                 ? `Last backup ${new Date(last).toLocaleString()}`
@@ -252,6 +360,35 @@ export default function Cloud() {
             </Pressable>
           </View>
 
+          {hasNoEmail(session) && (
+            <View style={card}>
+              <Text style={styles.title}>Your recovery code</Text>
+              <Text style={styles.body}>
+                Save this somewhere safe, like a password manager or a note to
+                yourself. Without it, a lost or reset phone means a lost backup.
+              </Text>
+              <Text selectable style={styles.code} accessibilityLabel="Recovery code">
+                {recovery ? formatRecoveryCode(recovery) : "Not saved on this phone"}
+              </Text>
+              {recovery ? (
+                <Pressable
+                  style={styles.secondary}
+                  onPress={() =>
+                    Share.share({
+                      message: `My Thali recovery code: ${formatRecoveryCode(recovery)}`,
+                    })
+                  }
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.secondaryText}>Save or share the code</Text>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={remakeCode} accessibilityRole="button">
+                <Text style={styles.link}>Make a new code</Text>
+              </Pressable>
+            </View>
+          )}
+
           <View style={[card, styles.autoRow]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>Back up automatically</Text>
@@ -273,10 +410,21 @@ export default function Cloud() {
           <Pressable
             style={styles.signOut}
             onPress={() => {
-              signOut();
-              setSession(null);
-              setAuto(false);
-              setError(null);
+              const out = () => {
+                signOut();
+                setSession(null);
+                setAuto(false);
+                setError(null);
+              };
+              if (!hasNoEmail(session)) return out();
+              Alert.alert(
+                "Sign out?",
+                "Without email you can only sign back in with your recovery code. Make sure you saved it.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Sign out", style: "destructive", onPress: out },
+                ],
+              );
             }}
             accessibilityRole="button"
           >
@@ -290,8 +438,8 @@ export default function Cloud() {
         <Text style={styles.muted}>
           Your profile, food logs, weights, custom foods and settings, saved in
           your own Supabase project. Nothing is shared, and only you can read
-          your backup. Switching phones? Sign in on the new phone and tap
-          Restore.
+          your backup. Switching phones? Sign in the same way on the new phone
+          (email code, or your recovery code) and tap Restore.
         </Text>
       </View>
     </ScrollView>
@@ -320,6 +468,17 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   error: { color: colors.danger, marginTop: 12, fontWeight: "600" },
+  code: {
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: 1,
+    color: colors.text,
+    backgroundColor: colors.bg,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 12,
+    textAlign: "center",
+  },
   primary: {
     marginTop: 16,
     backgroundColor: colors.primary,

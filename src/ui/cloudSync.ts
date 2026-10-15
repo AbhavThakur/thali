@@ -5,6 +5,7 @@ import {
   CloudError,
   createCloud,
   isExpiring,
+  normalizeRecoveryCode,
   type CloudConfig,
   type CloudSession,
 } from "../domain/cloud.ts";
@@ -13,6 +14,7 @@ import { ensurePerson, type People } from "../domain/people.ts";
 const SESSION_KEY = "cloud_session";
 const AUTO_KEY = "cloud_auto";
 const LAST_KEY = "cloud_last_backup";
+const CODE_KEY = "cloud_recovery_code";
 const DAY_MS = 20 * 60 * 60 * 1000;
 
 /** Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in .env (see .env.example). */
@@ -52,6 +54,37 @@ export function getCloud() {
   const cfg = cloudConfig();
   if (!cfg) throw new CloudError("Cloud backup isn't set up in this build.");
   return createCloud(cfg);
+}
+
+/** The recovery code made for this phone, kept so it can be shown again. Signing out doesn't remove it. */
+export const savedRecoveryCode = (): string | null =>
+  Storage.getItemSync(CODE_KEY);
+
+/** No email: a private anonymous account plus a recovery code the server makes. Returns the code. */
+export async function startWithoutEmail(): Promise<string> {
+  const cloud = getCloud();
+  const session = await cloud.signInAnonymously();
+  const code = await cloud.createRecoveryCode(session);
+  saveSession(session);
+  Storage.setItemSync(CODE_KEY, code);
+  return code;
+}
+
+/** Replaces the recovery code; the old one stops working. */
+export async function newRecoveryCode(): Promise<string> {
+  const code = await getCloud().createRecoveryCode(await freshSession());
+  Storage.setItemSync(CODE_KEY, code);
+  return code;
+}
+
+/** On a new phone: makes an account and moves the code's backups onto it. Returns how many moved. */
+export async function signInWithRecoveryCode(code: string): Promise<number> {
+  const cloud = getCloud();
+  const session = await cloud.signInAnonymously();
+  const moved = await cloud.claimRecoveryCode(session, code);
+  saveSession(session);
+  Storage.setItemSync(CODE_KEY, normalizeRecoveryCode(code));
+  return moved;
 }
 
 /** The saved session, refreshed when it is about to expire. Signs out if the server rejects it. */

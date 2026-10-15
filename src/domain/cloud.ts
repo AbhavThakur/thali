@@ -43,6 +43,18 @@ const CODE = /^\d{6,10}$/;
 export const isEmail = (s: string) => EMAIL.test(s.trim());
 export const isCode = (s: string) => CODE.test(s.trim());
 
+/** Recovery codes are 24 hex characters; people may type dashes, spaces or lower case. */
+export const normalizeRecoveryCode = (s: string) =>
+  s.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+export const isRecoveryCode = (s: string) =>
+  /^[0-9A-F]{24}$/.test(normalizeRecoveryCode(s));
+/** "A1B2C3D4E5F6A7B8C9D0E1F2" becomes "A1B2-C3D4-E5F6-A7B8-C9D0-E1F2". */
+export const formatRecoveryCode = (s: string) =>
+  normalizeRecoveryCode(s).replace(/(.{4})(?=.)/g, "$1-");
+
+/** A session made without an email (anonymous sign-in) has no address. */
+export const hasNoEmail = (s: CloudSession) => s.email === "";
+
 /** True when the access token has under a minute left. */
 export const isExpiring = (s: CloudSession, nowMs: number) =>
   s.expiresAt - nowMs / 1000 < 60;
@@ -131,6 +143,49 @@ export function createCloud(
         },
       );
       return toSession(r, email.trim());
+    },
+
+    /** An account with no email: the phone gets its own private identity. Needs "Allow anonymous sign-ins". */
+    async signInAnonymously(): Promise<CloudSession> {
+      const r = await call<TokenReply>(
+        "/auth/v1/signup",
+        { method: "POST", body: { data: {}, gotrue_meta_security: {} } },
+        {
+          400: 'Sign-in without email is switched off in Supabase. Turn on "Allow anonymous sign-ins".',
+          422: 'Sign-in without email is switched off in Supabase. Turn on "Allow anonymous sign-ins".',
+        },
+      );
+      return toSession(r, "");
+    },
+
+    /** Makes (or replaces) this account's recovery code. The server creates it, so it is truly random. */
+    async createRecoveryCode(s: CloudSession): Promise<string> {
+      const code = await call<string>(
+        "/rest/v1/rpc/create_recovery_code",
+        { method: "POST", token: s.accessToken, body: {} },
+        {
+          404: "The recovery-code functions are missing. Run the latest supabase/schema.sql.",
+        },
+      );
+      return normalizeRecoveryCode(code);
+    },
+
+    /** Moves the backups that belong to `code` onto this account. Returns how many backups moved. */
+    async claimRecoveryCode(s: CloudSession, code: string): Promise<number> {
+      if (!isRecoveryCode(code))
+        throw new CloudError("A recovery code has 24 letters and numbers.");
+      return call<number>(
+        "/rest/v1/rpc/claim_recovery_code",
+        {
+          method: "POST",
+          token: s.accessToken,
+          body: { code: normalizeRecoveryCode(code) },
+        },
+        {
+          400: "That recovery code isn't right.",
+          404: "The recovery-code functions are missing. Run the latest supabase/schema.sql.",
+        },
+      );
     },
 
     async refresh(s: CloudSession): Promise<CloudSession> {

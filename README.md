@@ -33,11 +33,13 @@ The day plan (`buildDayPlan`) moves any rounding shortfall onto breakfast, lunch
 
 1. Create a free project at supabase.com.
 2. In the SQL editor, run `supabase/schema.sql`. It creates one `backups` table with row-level security, so each signed-in user can only read their own rows.
-3. In Authentication → Email, keep "Email OTP" on and make sure the email template includes the `{{ .Token }}` code.
+3. Set up custom SMTP (Authentication → Emails → SMTP Settings). Supabase's built-in mailer only sends to your own team members, at 2 emails an hour, and can't edit templates, so sign-in codes won't reach family. Gmail works: host `smtp.gmail.com`, port `465`, your Gmail address as username and sender, and a Google App Password (needs 2-step verification) as the password. Then, under Authentication → Emails → Templates, put `{{ .Token }}` in both the "Confirm sign up" template (new users) and the "Magic link or OTP" template (returning users), for example `Your Thali code: {{ .Token }}`.
 4. Copy `.env.example` to `.env` and fill in the project URL and anon key (Project settings → API).
 5. Restart with `npx expo start -c`, and rebuild the APK so the keys are included.
 
 In the app: Me → Cloud backup → email → code. The anon key is public by design; the policies protect the data. The sign-in token is stored in the app's private storage.
+
+Sign-in without email (optional): turn on Authentication → Sign In / Providers → "Allow anonymous sign-ins", and re-run `supabase/schema.sql` (it is safe to run again). In the app choose "Start without email". The server makes a random recovery code for the phone; entering it on a new phone moves the backups there. Only a hash of the code is stored. Lose the code and the backup can't be recovered, so the app asks people to save it.
 
 Keeping the free project awake: Supabase pauses free projects after 7 days without activity. `.github/workflows/supabase-keepalive.yml` pings the database every Monday and Thursday. Push the repo to GitHub, then add two repository secrets (Settings → Secrets and variables → Actions): `SUPABASE_URL` and `SUPABASE_ANON_KEY`. Run it once from the Actions tab to check it passes. GitHub stops scheduled runs after 60 days with no commits on public repos, so make a commit now and then, or use a private repo.
 
