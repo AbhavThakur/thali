@@ -16,7 +16,7 @@ import {
   saveOverride,
 } from "../../src/db/db.ts";
 import { FOOD_BY_ID } from "../../src/domain/foods.ts";
-import { formatQty } from "../../src/domain/nutrition.ts";
+import { describeServing, formatQty } from "../../src/domain/nutrition.ts";
 import {
   applyOverrides,
   buildDayPlan,
@@ -264,8 +264,9 @@ export default function PlanScreen() {
               <View key={it.food.id} style={styles.item}>
                 <Text style={styles.itemName}>{it.food.name}</Text>
                 <Text style={styles.muted}>
-                  {formatQty(it.food, it.qty)} · {Math.round(it.macros.kcal)}{" "}
-                  kcal
+                  {describeServing(it.food, it.qty)} ·{" "}
+                  {Math.round(it.macros.kcal)} kcal · P{" "}
+                  {Math.round(it.macros.protein)} g
                 </Text>
               </View>
             ))}

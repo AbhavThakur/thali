@@ -81,6 +81,17 @@ export async function completeOnboarding(page: Page, p: Person = {}) {
   await skipTour(page);
 }
 
+/** The "Achievement unlocked" pop-up covers the screen until it is closed. */
+export async function dismissCelebration(page: Page) {
+  const yay = page.getByRole("button", { name: /Yay/ });
+  try {
+    await yay.waitFor({ timeout: 2_500 });
+    await yay.click();
+  } catch {
+    // No pop-up this time.
+  }
+}
+
 /** The first-run tour covers Today for a new profile; skip it if it shows up. */
 export async function skipTour(page: Page) {
   const skip = page.getByText("Skip", { exact: true });

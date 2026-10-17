@@ -27,9 +27,13 @@ import {
   type CustomFoodInput,
 } from "../src/domain/customFood.ts";
 import { FOOD_BY_ID } from "../src/domain/foods.ts";
-import { macrosFor } from "../src/domain/nutrition.ts";
+import { describeServing, macrosFor } from "../src/domain/nutrition.ts";
+import { shareChip, type SubmissionInfo } from "../src/domain/sharedFoods.ts";
 import type { Food } from "../src/domain/types.ts";
+import { loadSession } from "../src/ui/cloudSync.ts";
+import { loadSubmissions, syncCommunity } from "../src/ui/communitySync.ts";
 import { haptic } from "../src/ui/haptics.ts";
+import { usePeople } from "../src/ui/People.tsx";
 import { Sheet, sheetStyles } from "../src/ui/Sheet.tsx";
 import { card, colors } from "../src/ui/theme.ts";
 import { useToast } from "../src/ui/Toast.tsx";
@@ -76,8 +80,10 @@ function Field({
 export default function MyFoods() {
   const db = useSQLiteContext();
   const toast = useToast();
+  const { people } = usePeople();
   const params = useLocalSearchParams<{ name?: string }>();
   const [foods, setFoods] = useState<Food[]>([]);
+  const [subs, setSubs] = useState<Record<string, SubmissionInfo>>({});
   const [favourites, setFavourites] = useState<string[]>([]);
   const [editing, setEditing] = useState<{
     id: string | null;
@@ -88,14 +94,17 @@ export default function MyFoods() {
   const fromAdd = !!params.name;
 
   const refresh = useCallback(async () => {
-    setFoods(await getCustomFoods(db));
+    setFoods((await getCustomFoods(db)).filter((f) => !f.quick));
     setFavourites(await getFavouriteIds(db));
+    setSubs(loadSubmissions());
   }, [db]);
 
   useFocusEffect(
     useCallback(() => {
       refresh();
-    }, [refresh]),
+      // Pick up review results, then show them.
+      void syncCommunity(people).then(() => setSubs(loadSubmissions()));
+    }, [refresh, people]),
   );
 
   useEffect(() => {
@@ -122,6 +131,7 @@ export default function MyFoods() {
     await saveCustomFood(db, built.food);
     await loadCustomFoods(db);
     await refresh();
+    void syncCommunity(people, true).then(() => setSubs(loadSubmissions()));
     haptic.success();
     setEditing(null);
     setError(null);
@@ -166,37 +176,66 @@ export default function MyFoods() {
           Add dishes that aren't in Thali, like your family's recipes or a
           packaged snack. They appear in search and in meal edits.
         </Text>
+        <Text style={[styles.muted, { marginTop: 6 }]}>
+          Foods you add are also sent, without your name, to Thali's shared list
+          once they have been checked, so everyone gets correct numbers. If
+          something is wrong, it is fixed for you too.
+        </Text>
         {foods.length === 0 ? (
           <Text style={[styles.muted, { marginTop: 12 }]}>
             Nothing here yet.
           </Text>
         ) : (
-          foods.map((f) => (
-            <View key={f.id} style={styles.row}>
-              <Pressable
-                style={{ flex: 1 }}
-                onPress={() =>
-                  setEditing({ id: f.id, form: toCustomFoodInput(f) })
-                }
-                accessibilityRole="button"
-                accessibilityLabel={`Edit ${f.name}`}
-              >
-                <Text style={styles.name}>{f.name}</Text>
-                <Text style={styles.muted}>
-                  1 {f.measure.unit} · {Math.round(macrosFor(f, 1).kcal)} kcal ·{" "}
-                  {Math.round(macrosFor(f, 1).protein)} g protein
-                </Text>
-              </Pressable>
-              <Pressable
-                hitSlop={10}
-                onPress={() => remove(f)}
-                accessibilityRole="button"
-                accessibilityLabel={`Delete ${f.name}`}
-              >
-                <Text style={styles.delete}>Delete</Text>
-              </Pressable>
-            </View>
-          ))
+          foods.map((f) => {
+            const info = subs[f.id];
+            const chip = shareChip(info, !!loadSession());
+            const locked = info?.status === "approved";
+            return (
+              <View key={f.id} style={styles.row}>
+                <Pressable
+                  style={{ flex: 1 }}
+                  onPress={() =>
+                    locked
+                      ? Alert.alert(
+                          "Checked and shared",
+                          "This food is now in Thali's shared list, so its numbers can't be changed here. If something looks wrong, open the food when adding it and tap Report.",
+                        )
+                      : f.recipe
+                        ? router.push({ pathname: "/recipe", params: { id: f.id } })
+                        : setEditing({ id: f.id, form: toCustomFoodInput(f) })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={`${locked ? "View" : "Edit"} ${f.name}`}
+                >
+                  <Text style={styles.name}>{f.name}</Text>
+                  <Text style={styles.muted}>
+                    {describeServing(f, 1)} · {Math.round(macrosFor(f, 1).kcal)}{" "}
+                    kcal · {Math.round(macrosFor(f, 1).protein)} g protein
+                  </Text>
+                  <Text
+                    style={[
+                      styles.status,
+                      chip.tone === "good" && { color: colors.primaryText },
+                      chip.tone === "wait" && { color: colors.warnText },
+                    ]}
+                  >
+                    {chip.text}
+                    {info?.status === "rejected" && info.note
+                      ? ` · ${info.note}`
+                      : ""}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  hitSlop={10}
+                  onPress={() => remove(f)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete ${f.name}`}
+                >
+                  <Text style={styles.delete}>Delete</Text>
+                </Pressable>
+              </View>
+            );
+          })
         )}
         <Pressable
           style={styles.add}
@@ -204,6 +243,13 @@ export default function MyFoods() {
           accessibilityRole="button"
         >
           <Text style={styles.addText}>+ Add a food</Text>
+        </Pressable>
+        <Pressable
+          style={styles.addAlt}
+          onPress={() => router.push("/recipe")}
+          accessibilityRole="button"
+        >
+          <Text style={styles.addAltText}>🍲 Make a recipe from ingredients</Text>
         </Pressable>
       </View>
 
@@ -369,6 +415,12 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   title: { fontSize: 17, fontWeight: "800", color: colors.text },
   muted: { fontSize: 13, color: colors.muted },
+  status: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.muted,
+    marginTop: 2,
+  },
   name: { fontSize: 15, fontWeight: "600", color: colors.text },
   row: {
     flexDirection: "row",
@@ -389,6 +441,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   addText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  addAlt: {
+    marginTop: 10,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: 22,
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  addAltText: { color: colors.primaryText, fontWeight: "700", fontSize: 15 },
   label: {
     fontSize: 13,
     fontWeight: "600",

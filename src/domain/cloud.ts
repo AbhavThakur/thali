@@ -12,6 +12,15 @@ import {
   type FamilyMember,
   type Kudos,
 } from "./family.ts";
+import {
+  foodFromRow,
+  sharedId,
+  uuidOfShared,
+  type SharedFoodRow,
+  type SubmissionInfo,
+  type SubmissionStatus,
+} from "./sharedFoods.ts";
+import type { Food } from "./types.ts";
 
 export type CloudConfig = { url: string; anonKey: string };
 
@@ -54,6 +63,9 @@ export const isCode = (s: string) => CODE.test(s.trim());
 
 const FAMILY_MISSING = {
   404: "The family functions are missing. Run the latest supabase/schema.sql.",
+};
+const FOODS_MISSING = {
+  404: "The shared-food functions are missing. Run the latest supabase/schema.sql.",
 };
 
 /** Recovery codes are 24 hex characters; people may type dashes, spaces or lower case. */
@@ -529,6 +541,94 @@ export function createCloud(
         "/rest/v1/rpc/mark_kudos_seen",
         { method: "POST", token: s.accessToken, body: {} },
         FAMILY_MISSING,
+      );
+    },
+
+    /** Every approved shared food. Needs no sign-in: it is public, with nobody's identity on it. */
+    async approvedFoods(): Promise<Food[]> {
+      const out: Food[] = [];
+      for (let offset = 0; offset < 20_000; offset += 1000) {
+        const rows = await call<SharedFoodRow[]>(
+          `/rest/v1/approved_foods?select=id,name,unit,grams,kcal,protein,carbs,fat,fiber,tags&order=updated_at.asc,id.asc&limit=1000&offset=${offset}`,
+          {},
+          FOODS_MISSING,
+        );
+        out.push(...rows.map(foodFromRow));
+        if (rows.length < 1000) break;
+      }
+      return out;
+    },
+
+    /** Sends one of the person's own foods to be checked. Safe to repeat: until reviewed it just updates. */
+    async submitFood(
+      s: CloudSession,
+      clientId: string,
+      f: Food,
+    ): Promise<{ id: string; status: SubmissionStatus }> {
+      return call<{ id: string; status: SubmissionStatus }>(
+        "/rest/v1/rpc/submit_food",
+        {
+          method: "POST",
+          token: s.accessToken,
+          body: {
+            p_client_id: clientId,
+            p_name: f.name,
+            p_unit: f.measure.unit,
+            p_grams: f.measure.grams,
+            p_kcal: f.per100g.kcal,
+            p_protein: f.per100g.protein,
+            p_carbs: f.per100g.carbs,
+            p_fat: f.per100g.fat,
+            p_fiber: f.per100g.fiber,
+            p_tags: f.tags,
+          },
+        },
+        FOODS_MISSING,
+      );
+    },
+
+    /** What happened to each food this account sent, keyed by the food's id on the phone. */
+    async mySubmissions(
+      s: CloudSession,
+    ): Promise<Record<string, SubmissionInfo>> {
+      const rows = await call<
+        {
+          client_id: string;
+          status: SubmissionStatus;
+          community_id: string | null;
+          admin_note: string;
+          changed_by_admin: boolean;
+        }[]
+      >(
+        "/rest/v1/rpc/my_food_submissions",
+        { method: "POST", token: s.accessToken, body: {} },
+        FOODS_MISSING,
+      );
+      return Object.fromEntries(
+        rows.map((r) => [
+          r.client_id,
+          {
+            status: r.status,
+            communityId: r.community_id ? sharedId(r.community_id) : null,
+            note: r.admin_note,
+            changedByAdmin: r.changed_by_admin,
+          },
+        ]),
+      );
+    },
+
+    /** Tells the admin a shared food looks wrong. */
+    async reportFood(s: CloudSession, foodId: string, message: string) {
+      const uuid = uuidOfShared(foodId);
+      if (!uuid) throw new CloudError("Only shared foods can be reported.");
+      await call(
+        "/rest/v1/rpc/report_food",
+        {
+          method: "POST",
+          token: s.accessToken,
+          body: { p_food_id: uuid, p_message: message.trim().slice(0, 300) },
+        },
+        FOODS_MISSING,
       );
     },
   };

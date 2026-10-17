@@ -10,7 +10,11 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
-  reporter: [["list"], ["html", { open: "never" }]],
+  reporter: [
+    ["list"],
+    ["html", { open: "never" }],
+    ["json", { outputFile: "e2e/artifacts/web/results.json" }],
+  ],
   outputDir: "test-results",
   use: {
     baseURL: `http://localhost:${PORT}`,

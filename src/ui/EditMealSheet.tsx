@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { allFoods, FOOD_BY_ID } from "../domain/foods.ts";
-import { formatQty, isAllowed } from "../domain/nutrition.ts";
+import { describeServing, isAllowed } from "../domain/nutrition.ts";
 import { optionFromItems } from "../domain/plan.ts";
 import type { DietType, MealOption, PlanItemInput } from "../domain/types.ts";
 import { colors } from "./theme.ts";
@@ -114,7 +114,9 @@ export function EditMealSheet({
                 <View key={it.foodId} style={styles.row}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{food.name}</Text>
-                    <Text style={styles.muted}>{formatQty(food, it.qty)}</Text>
+                    <Text style={styles.muted}>
+                      {describeServing(food, it.qty)}
+                    </Text>
                   </View>
                   <Pressable
                     style={styles.step}
@@ -166,7 +168,7 @@ export function EditMealSheet({
                 }}
               >
                 <Text style={styles.name}>{f.name}</Text>
-                <Text style={styles.muted}>{formatQty(f, 1)}</Text>
+                <Text style={styles.muted}>{describeServing(f, 1)}</Text>
               </Pressable>
             ))}
           </ScrollView>

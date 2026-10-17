@@ -1,3 +1,4 @@
+import { INGREDIENTS } from "./ingredients.ts";
 import type { Food } from "./types.ts";
 
 type Tags = Food["tags"];
@@ -255,19 +256,66 @@ export const FOODS: Food[] = [
 ];
 
 export const FOOD_BY_ID: Record<string, Food> = Object.fromEntries(
-  FOODS.map((f) => [f.id, f]),
+  [...FOODS, ...INGREDIENTS].map((f) => [f.id, f]),
 );
 
 let customFoods: Food[] = [];
+let communityFoods: Food[] = [];
+/** Own foods that were checked and shared: local id -> shared food id. */
+let aliases: Record<string, string> = {};
+
+/** Puts every layer into the lookup: built-in, then own foods, then shared foods, then swaps for checked copies. */
+function rebuildLookup(previousIds: string[]) {
+  for (const id of previousIds) delete FOOD_BY_ID[id];
+  for (const f of FOODS) FOOD_BY_ID[f.id] = f;
+  for (const f of INGREDIENTS) FOOD_BY_ID[f.id] = f;
+  for (const f of customFoods) FOOD_BY_ID[f.id] = f;
+  for (const f of communityFoods) FOOD_BY_ID[f.id] = f;
+  for (const [local, shared] of Object.entries(aliases))
+    if (FOOD_BY_ID[shared] && FOOD_BY_ID[shared].community)
+      FOOD_BY_ID[local] = FOOD_BY_ID[shared];
+}
+
+const registeredIds = () => [
+  ...customFoods.map((f) => f.id),
+  ...communityFoods.map((f) => f.id),
+];
 
 /** The user's own foods, always flagged `custom`. Replaces whatever was registered before. */
 export function registerCustomFoods(list: Food[]) {
-  for (const f of customFoods) delete FOOD_BY_ID[f.id];
+  const before = registeredIds();
   customFoods = list.map((f) => ({ ...f, custom: true, verified: false }));
-  for (const f of customFoods) FOOD_BY_ID[f.id] = f;
+  rebuildLookup(before);
 }
 
-/** Built-in foods plus the user's own. */
+/**
+ * The shared, admin-checked foods. `own` maps a person's own food ids to the shared food that replaced them,
+ * so old logs show the corrected values.
+ */
+export function registerCommunityFoods(
+  list: Food[],
+  own: Record<string, string> = {},
+) {
+  const before = registeredIds();
+  communityFoods = list.map((f) => ({
+    ...f,
+    community: true,
+    custom: false,
+    verified: true,
+  }));
+  aliases = { ...own };
+  rebuildLookup(before);
+}
+
+/** True when an own food has been replaced by its checked, shared version. */
+export const isReplacedByShared = (id: string) =>
+  !!aliases[id] && !!FOOD_BY_ID[aliases[id]]?.community;
+
+/** Built-in foods, the user's own (unless a checked copy replaced them) and the shared foods. Quick entries are never listed. */
 export function allFoods(): Food[] {
-  return [...FOODS, ...customFoods];
+  return [
+    ...FOODS,
+    ...customFoods.filter((f) => !f.quick && !isReplacedByShared(f.id)),
+    ...communityFoods,
+  ];
 }

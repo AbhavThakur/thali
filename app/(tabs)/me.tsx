@@ -27,6 +27,7 @@ import { haptic } from "../../src/ui/haptics.ts";
 import { Mascot } from "../../src/ui/Mascot.tsx";
 import { PeopleSheet, usePeople } from "../../src/ui/People.tsx";
 import { GOAL_LABEL } from "../../src/ui/profileForm.ts";
+import { loadSession } from "../../src/ui/cloudSync.ts";
 import { Sheet, sheetStyles } from "../../src/ui/Sheet.tsx";
 import {
   card,
@@ -253,9 +254,17 @@ export default function ProfileScreen() {
             onPress: () => router.push("/foods"),
           },
           {
+            emoji: "⏱",
+            label: "Fasting timer",
+            sub: "Start and stop a fast, see your history",
+            onPress: () => router.push("/fasting"),
+          },
+          {
             emoji: "☁️",
             label: "Cloud backup",
-            sub: "Keep your data safe if you lose the phone",
+            sub: loadSession()
+              ? "Keep your data safe if you lose the phone"
+              : "Not backed up: your data is only on this phone",
             onPress: () => router.push("/cloud"),
           },
           {

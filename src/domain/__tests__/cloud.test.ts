@@ -13,6 +13,7 @@ import {
   type CloudSession,
   type FetchLike,
 } from "../cloud.ts";
+import { shareChip } from "../sharedFoods.ts";
 
 type Call = {
   url: string;
@@ -322,4 +323,90 @@ test("shared days are grouped by person", async () => {
   const byUser = await createCloud(cfg, f).familyDays(session, "2026-09-01");
   assert.equal(byUser.get("a")?.length, 2);
   assert.equal(byUser.get("b")?.[0].weightKg, 61.5);
+});
+
+const row = (id: string, name = "Besan laddoo") => ({
+  id,
+  name,
+  unit: "laddoo",
+  grams: "30.0",
+  kcal: "450.0",
+  protein: "9.0",
+  carbs: "50.0",
+  fat: "24.0",
+  fiber: "3.0",
+  tags: { egg: true },
+});
+
+test("approved foods need no sign-in, are read in pages and become shared foods", async () => {
+  const page = Array.from({ length: 1000 }, (_, i) => row(`id${i}`));
+  const { f, calls } = fake([{ body: page }, { body: [row("last")] }]);
+  const foods = await createCloud(cfg, f).approvedFoods();
+  assert.equal(foods.length, 1001);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[0].url.includes("/rest/v1/approved_foods"));
+  assert.ok(calls[1].url.includes("offset=1000"));
+  assert.equal(calls[0].headers?.Authorization, "Bearer anon");
+  assert.equal(foods[1000].id, "cf_last");
+  assert.equal(foods[1000].per100g.kcal, 450);
+  assert.deepEqual(foods[1000].measure, { unit: "laddoo", grams: 30 });
+  assert.equal(foods[1000].community, true);
+});
+
+test("submitting a food sends per-100 g values under the user's token", async () => {
+  const { f, calls } = fake([{ body: { id: "u1", status: "pending" } }]);
+  const out = await createCloud(cfg, f).submitFood(session, "c_abc", {
+    id: "c_abc",
+    name: "My laddoo",
+    per100g: { kcal: 400, protein: 8, carbs: 55, fat: 17, fiber: 2 },
+    measure: { unit: "laddoo", grams: 30 },
+    tags: { egg: true },
+    verified: false,
+  });
+  assert.equal(out.status, "pending");
+  assert.ok(calls[0].url.endsWith("/rest/v1/rpc/submit_food"));
+  assert.equal(calls[0].headers?.Authorization, "Bearer at");
+  const body = JSON.parse(calls[0].body ?? "{}");
+  assert.equal(body.p_client_id, "c_abc");
+  assert.equal(body.p_kcal, 400);
+  assert.equal(body.p_grams, 30);
+  assert.deepEqual(body.p_tags, { egg: true });
+});
+
+test("my submissions map the shared id and status", async () => {
+  const { f } = fake([
+    {
+      body: [
+        { client_id: "c_a", status: "approved", community_id: "u9", admin_note: "", changed_by_admin: true },
+        { client_id: "c_b", status: "rejected", community_id: null, admin_note: "Not a food", changed_by_admin: false },
+      ],
+    },
+  ]);
+  const subs = await createCloud(cfg, f).mySubmissions(session);
+  assert.deepEqual(subs.c_a, { status: "approved", communityId: "cf_u9", note: "", changedByAdmin: true });
+  assert.equal(subs.c_b.communityId, null);
+  assert.equal(subs.c_b.note, "Not a food");
+});
+
+test("reports go out with the plain id and a trimmed message", async () => {
+  const { f, calls } = fake([{}]);
+  await createCloud(cfg, f).reportFood(session, "cf_u9", "  too many calories  ");
+  assert.deepEqual(JSON.parse(calls[0].body ?? "{}"), {
+    p_food_id: "u9",
+    p_message: "too many calories",
+  });
+  await assert.rejects(() => createCloud(cfg, f).reportFood(session, "c_abc", "x"));
+});
+
+test("status chips tell the person where their food is", () => {
+  assert.equal(shareChip(undefined, false).text, "Shared after you back up");
+  assert.equal(shareChip(undefined, true).tone, "wait");
+  const base = { communityId: null, note: "", changedByAdmin: false };
+  assert.equal(shareChip({ ...base, status: "pending" }, true).text, "In review");
+  assert.equal(shareChip({ ...base, status: "approved" }, true).text, "Checked ✓");
+  assert.equal(
+    shareChip({ ...base, status: "approved", changedByAdmin: true }, true).text,
+    "Checked and corrected ✓",
+  );
+  assert.equal(shareChip({ ...base, status: "rejected" }, true).tone, "info");
 });

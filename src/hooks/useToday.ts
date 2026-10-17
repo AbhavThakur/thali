@@ -3,6 +3,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import { useCallback, useMemo, useState } from "react";
 import { calorieTarget, macroTargets } from "../domain/energy.ts";
 import { FOOD_BY_ID } from "../domain/foods.ts";
+import { shiftDate } from "../domain/history.ts";
 import { macrosFor, sumMacros } from "../domain/nutrition.ts";
 import { loggingStreak } from "../domain/streak.ts";
 import type { PlanOverride, Profile } from "../domain/types.ts";
@@ -26,6 +27,7 @@ export function useToday() {
   const date = today();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
+  const [yesterday, setYesterday] = useState<LogRow[]>([]);
   const [streak, setStreak] = useState(0);
   const [overrides, setOverrides] = useState<PlanOverride[]>([]);
   const [water, setWater] = useState(0);
@@ -34,6 +36,7 @@ export function useToday() {
   const reload = useCallback(async () => {
     setProfile(await getProfile(db));
     setLogs(await getLogs(db, date));
+    setYesterday(await getLogs(db, shiftDate(date, -1)));
     setStreak(loggingStreak(await getLoggedDates(db), date));
     setOverrides(await getOverrides(db, date));
     setWater(await getWater(db, date));
@@ -67,6 +70,7 @@ export function useToday() {
     date,
     profile,
     logs,
+    yesterday,
     targets,
     consumed,
     streak,

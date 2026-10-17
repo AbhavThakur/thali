@@ -14,13 +14,31 @@ import {
   getFavouriteIds,
   getProfile,
   getRecentFoodIds,
+  loadCustomFoods,
+  saveCustomFood,
   toggleFavourite,
   today,
 } from "../src/db/db.ts";
 import { allFoods, FOOD_BY_ID } from "../src/domain/foods.ts";
-import { formatQty, isAllowed, macrosFor } from "../src/domain/nutrition.ts";
+import {
+  describeServing,
+  formatQty,
+  gramsFor,
+  isAllowed,
+  macroLine,
+  macrosFor,
+  qtyFromGrams,
+} from "../src/domain/nutrition.ts";
 import { SLOTS } from "../src/domain/plan.ts";
+import {
+  buildQuickFood,
+  EMPTY_QUICK_ADD,
+  newQuickFoodId,
+  type QuickAddInput,
+} from "../src/domain/quickAdd.ts";
 import type { DietType, Food, SlotId } from "../src/domain/types.ts";
+import { freshSession, getCloud, loadSession } from "../src/ui/cloudSync.ts";
+import { PromptSheet, Sheet, sheetStyles } from "../src/ui/Sheet.tsx";
 import { colors } from "../src/ui/theme.ts";
 import { haptic } from "../src/ui/haptics.ts";
 import { useToast } from "../src/ui/Toast.tsx";
@@ -40,10 +58,16 @@ export default function AddFood() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Food | null>(null);
   const [qty, setQty] = useState(1);
+  // People who weigh their food can type grams; the log still stores household quantities.
+  const [byGrams, setByGrams] = useState(false);
+  const [gramsText, setGramsText] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
   const [favourites, setFavourites] = useState<string[]>([]);
   const [tick, setTick] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [quick, setQuick] = useState<QuickAddInput | null>(null);
+  const [quickError, setQuickError] = useState<string | null>(null);
   const toast = useToast();
 
   useEffect(() => {
@@ -70,9 +94,9 @@ export default function AddFood() {
 
   const pickable = (ids: string[]) =>
     diet
-      ? ids
-          .map((id) => FOOD_BY_ID[id])
-          .filter((f): f is Food => !!f && isAllowed(f, diet))
+      ? [...new Set(ids.map((id) => FOOD_BY_ID[id]?.id))]
+          .map((id) => FOOD_BY_ID[id as string])
+          .filter((f): f is Food => !!f && !f.quick && isAllowed(f, diet))
       : [];
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const recentFoods = useMemo(() => pickable(recent), [recent, diet, tick]);
@@ -94,6 +118,48 @@ export default function AddFood() {
     haptic.tap();
     setSelected(f);
     setQty(1);
+    setByGrams(false);
+  };
+
+  const stepQty = (delta: number) => {
+    if (!selected) return;
+    const next = Math.max(0.5, qty + delta);
+    setQty(next);
+    if (byGrams) setGramsText(String(gramsFor(selected, next)));
+  };
+
+  const toggleGrams = () => {
+    if (!selected) return;
+    haptic.tap();
+    if (!byGrams) setGramsText(String(gramsFor(selected, qty)));
+    setByGrams(!byGrams);
+  };
+
+  const typeGrams = (text: string) => {
+    setGramsText(text);
+    const g = Number(text.replace(",", "."));
+    if (selected && g > 0 && g <= 3000) setQty(qtyFromGrams(selected, g));
+  };
+
+  const saveQuick = async () => {
+    if (!quick || busy) return;
+    const built = buildQuickFood(quick, newQuickFoodId());
+    if ("error" in built) {
+      haptic.warn();
+      return setQuickError(built.error);
+    }
+    setBusy(true);
+    try {
+      await saveCustomFood(db, built.food);
+      await loadCustomFoods(db);
+      await addLogs(db, date, [{ slot, foodId: built.food.id, qty: 1 }]);
+      haptic.success();
+      toast(`${built.food.name} added`);
+      router.back();
+    } catch {
+      setBusy(false);
+      toast("Could not add that. Please try again.");
+    }
   };
 
   const add = async () => {
@@ -128,6 +194,17 @@ export default function AddFood() {
         returnKeyType="search"
         clearButtonMode="while-editing"
       />
+      <Pressable
+        style={styles.quickLink}
+        onPress={() => {
+          setQuickError(null);
+          setQuick({ ...EMPTY_QUICK_ADD, name: query.trim() });
+        }}
+        accessibilityRole="button"
+        accessibilityLabel="Quick add calories"
+      >
+        <Text style={styles.link}>⚡ Can't find it? Quick add calories</Text>
+      </Pressable>
       <FlatList
         data={results}
         keyExtractor={(f) => f.id}
@@ -228,15 +305,21 @@ export default function AddFood() {
             onPress={() => pick(item)}
             accessibilityRole="button"
             accessibilityState={{ selected: selected?.id === item.id }}
-            accessibilityLabel={`${item.name}, ${Math.round(macrosFor(item, 1).kcal)} kilocalories per ${item.measure.unit}`}
+            accessibilityLabel={`${item.name}, ${Math.round(macrosFor(item, 1).kcal)} kilocalories per ${describeServing(item, 1)}`}
             style={[
               styles.row,
               selected?.id === item.id && { backgroundColor: colors.tint },
             ]}
           >
-            <Text style={styles.name}>{item.name}</Text>
+            <Text style={styles.name}>
+              {item.name}
+              {item.community ? (
+                <Text style={styles.checked}> ✓ Checked</Text>
+              ) : null}
+            </Text>
             <Text style={styles.muted}>
-              1 {item.measure.unit} · {Math.round(macrosFor(item, 1).kcal)} kcal
+              {describeServing(item, 1)} · {Math.round(macrosFor(item, 1).kcal)}{" "}
+              kcal · P {Math.round(macrosFor(item, 1).protein)} g
             </Text>
           </Pressable>
         )}
@@ -244,7 +327,7 @@ export default function AddFood() {
       {selected && (
         <View style={styles.footer}>
           <Pressable
-            onPress={() => setQty((q) => Math.max(0.5, q - 0.5))}
+            onPress={() => stepQty(-0.5)}
             style={styles.step}
             hitSlop={6}
             accessibilityRole="button"
@@ -253,10 +336,47 @@ export default function AddFood() {
             <Text style={styles.stepText}>−</Text>
           </Pressable>
           <View style={{ flex: 1, alignItems: "center" }}>
-            <Text style={styles.name}>{formatQty(selected, qty)}</Text>
+            {byGrams ? (
+              <View style={styles.gramsRow}>
+                <TextInput
+                  style={styles.gramsInput}
+                  value={gramsText}
+                  onChangeText={typeGrams}
+                  keyboardType="decimal-pad"
+                  accessibilityLabel="Weight in grams"
+                  selectTextOnFocus
+                />
+                <Text style={styles.name}>g</Text>
+              </View>
+            ) : (
+              <Text style={styles.name}>{describeServing(selected, qty)}</Text>
+            )}
             <Text style={styles.muted}>
-              {Math.round(macrosFor(selected, qty).kcal)} kcal
+              {Math.round(macrosFor(selected, qty).kcal)} kcal ·{" "}
+              {macroLine(macrosFor(selected, qty))}
             </Text>
+            <Pressable
+              onPress={toggleGrams}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={
+                byGrams ? "Use servings instead" : "Enter weight in grams"
+              }
+            >
+              <Text style={styles.link}>
+                {byGrams ? "Use servings" : "Enter grams"}
+              </Text>
+            </Pressable>
+            {selected.community ? (
+              <Pressable
+                onPress={() => setReporting(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Report wrong values for ${selected.name}`}
+              >
+                <Text style={styles.report}>Report a problem</Text>
+              </Pressable>
+            ) : null}
           </View>
           <Pressable
             onPress={onFavourite}
@@ -279,7 +399,7 @@ export default function AddFood() {
             </Text>
           </Pressable>
           <Pressable
-            onPress={() => setQty((q) => q + 0.5)}
+            onPress={() => stepQty(0.5)}
             style={styles.step}
             hitSlop={6}
             accessibilityRole="button"
@@ -298,6 +418,86 @@ export default function AddFood() {
           </Pressable>
         </View>
       )}
+      <Sheet visible={!!quick} onClose={() => setQuick(null)}>
+        <Text style={sheetStyles.title}>Quick add</Text>
+        <Text style={sheetStyles.sub}>
+          Just the calories for what you ate. Protein, carbs and fat are
+          optional. This stays on your phone and isn't added to your foods.
+        </Text>
+        {quick && (
+          <>
+            {(
+              [
+                ["name", "What was it? (optional)", false],
+                ["kcal", "Calories (kcal)", true],
+                ["protein", "Protein (g, optional)", true],
+                ["carbs", "Carbs (g, optional)", true],
+                ["fat", "Fat (g, optional)", true],
+              ] as [keyof QuickAddInput, string, boolean][]
+            ).map(([k, label, numeric]) => (
+              <View key={k} style={{ marginTop: 8 }}>
+                <Text style={styles.quickLabel}>{label}</Text>
+                <TextInput
+                  style={styles.quickInput}
+                  value={quick[k]}
+                  onChangeText={(v) => {
+                    setQuick((q) => (q ? { ...q, [k]: v } : q));
+                    setQuickError(null);
+                  }}
+                  keyboardType={numeric ? "decimal-pad" : "default"}
+                  placeholder={numeric ? "" : "Biryani at a restaurant"}
+                  placeholderTextColor={colors.muted}
+                  accessibilityLabel={label}
+                />
+              </View>
+            ))}
+            {quickError ? (
+              <Text style={styles.quickError} accessibilityLiveRegion="polite">
+                {quickError}
+              </Text>
+            ) : null}
+          </>
+        )}
+        <Pressable
+          style={[sheetStyles.save, busy && { opacity: 0.6 }]}
+          onPress={saveQuick}
+          disabled={busy}
+          accessibilityRole="button"
+        >
+          <Text style={sheetStyles.saveText}>
+            Add to {SLOTS.find((s) => s.id === slot)?.label}
+          </Text>
+        </Pressable>
+      </Sheet>
+      <PromptSheet
+        visible={reporting}
+        title="What looks wrong?"
+        subtitle={`Tell us about ${selected?.name ?? "this food"}, for example “calories look too high”. We check it and fix it for everyone.`}
+        initial=""
+        validate={(v) =>
+          v.trim().length < 3 ? "Add a few words about what is wrong." : null
+        }
+        onClose={() => setReporting(false)}
+        onSave={async (message) => {
+          if (!selected) return;
+          try {
+            if (!loadSession())
+              throw new Error(
+                "Turn on Cloud backup (Me tab) first, so we know the report is from a real person.",
+              );
+            await getCloud().reportFood(
+              await freshSession(),
+              selected.id,
+              message,
+            );
+            setReporting(false);
+            toast("Thanks, we will check it");
+          } catch (e) {
+            setReporting(false);
+            toast(e instanceof Error ? e.message : "Could not send that.");
+          }
+        }}
+      />
     </View>
   );
 }
@@ -305,6 +505,34 @@ export default function AddFood() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg, padding: 16 },
   muted: { fontSize: 13, color: colors.muted },
+  gramsRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  gramsInput: {
+    minWidth: 64,
+    textAlign: "center",
+    backgroundColor: colors.card,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.track,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    fontSize: 16,
+  },
+  link: { fontSize: 13, fontWeight: "700", color: colors.primaryText },
+  quickLink: { alignSelf: "flex-start", paddingBottom: 8, minHeight: 32 },
+  quickLabel: { fontSize: 13, fontWeight: "600", color: colors.text, marginBottom: 4 },
+  quickInput: {
+    borderWidth: 1,
+    borderColor: colors.track,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: colors.text,
+  },
+  quickError: { color: colors.danger, marginTop: 10, fontWeight: "600" },
+  report: { fontSize: 12, color: colors.muted, textDecorationLine: "underline" },
+  checked: { fontSize: 12, fontWeight: "700", color: colors.primaryText },
   input: {
     backgroundColor: colors.card,
     color: colors.text,

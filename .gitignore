@@ -10,3 +10,4 @@ e2e/artifacts/
 .DS_Store
 playwright-report/
 test-results/
+foods-review/

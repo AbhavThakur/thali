@@ -12,7 +12,11 @@
     "build": "npx expo prebuild --platform android --clean && cd android && ./gradlew assembleRelease",
     "typecheck": "tsc --noEmit",
     "e2e": "node e2e/run.mjs",
-    "e2e:web": "playwright test"
+    "e2e:web": "playwright test",
+    "e2e:web:report": "playwright show-report",
+    "foods:auto": "node --experimental-strip-types --no-warnings scripts/foods-review.ts auto",
+    "foods:pending": "node --experimental-strip-types --no-warnings scripts/foods-review.ts pending",
+    "foods:apply": "node --experimental-strip-types --no-warnings scripts/foods-review.ts apply"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.17",

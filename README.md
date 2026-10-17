@@ -59,14 +59,37 @@ Before any update, Me → Cloud backup → Back up now is a cheap safety net.
 
 Everyone installs Thali on their own phone, signs in to the cloud (email or recovery code) and joins one family with an 8-letter invite code (Family tab). Members see each other's streak, stars, meals logged today and a weekly "everyone logs 5 days" goal, and can send cheers. Only a small daily summary is shared, never foods or calories; weight is shared only if that person turns on "Share my weight" (off by default, and removing the switch deletes it). Needs the latest `supabase/schema.sql` run once (safe to run again). All writes go through database functions; the tables are read-only for the app, and RLS limits reads to your own family. Push notifications are not built; cheers show as a badge on the Family tab.
 
+## Everyday helpers
+
+- **Recipe builder** (My foods → Make a recipe): pick raw ingredients (about 35 built in, plus any food), type their weights, weigh the finished pot and say how many servings it makes. The dish becomes a food you log by the katori, and it is saved, shared and reviewed like any own food. Raw ingredient values are approximate (`src/domain/ingredients.ts`).
+- **Quick add** (Add food → Quick add calories): log just calories (macros optional) when a food can't be found. It stays on the phone: not in search, My foods or the shared list.
+- **Repeat**: on Today, "Repeat yesterday's lunch" and "Copy yesterday" add earlier meals in one tap, with Undo.
+- **Weigh-in**: the Weigh-in card on Today logs weight in two taps.
+- **Fasting timer** (Me → Fasting timer): start and stop a fast with a 12–24 h goal and a short history. Not offered under 18, in pregnancy, or with an eating-disorder history; a doctor note is shown for health conditions. Stored in `settings.fasting`.
+- **This week** (Progress): Monday to Sunday bars against the calorie target, judged as a week (one bigger day is fine). Never praises eating well below target.
+
+## Shared foods and the review loop
+
+Every food someone adds in My foods is also sent, without their name, to the cloud as "pending" (once they are signed in; until then it waits on the phone). You check it, fix it if needed, and approve it. Approved foods are downloaded by every install (public `approved_foods` view, refreshed about every 12 hours) and show a "✓ Checked" label. The person who added a food sees its status (In review, Checked, Checked and corrected, Kept private), their own copy is swapped for the checked one (old logs show the corrected values), and approved foods can't be edited by them. Anyone can tap "Report a problem" on a shared food. A new food with the same name and about the same calories as an approved one is matched automatically.
+
+Reviewing, from VS Code (the key never goes in the app or in chat):
+
+1. Get the service-role key: Supabase dashboard, your project, Project Settings (gear icon), API Keys, and copy the `service_role` secret (on the newer layout it is under "Legacy API Keys", or a secret key under "API Keys"; either works). Paste it after `SUPABASE_SERVICE_ROLE_KEY=` in `.env.admin` (git-ignored). The URL comes from `.env`. Treat it like a password: it bypasses all row-level security.
+2. `npm run foods:auto` is the automatic review (dry run). It approves clean foods, corrects calories that disagree with the macros, refuses junk names, merges copies of a food that is already shared, and sets aside anything else. `npm run foods:auto -- --yes` applies it. Whatever needs a person is written to `foods-review/needs-human.json` with the reason.
+3. For those, ask the assistant to review `foods-review/needs-human.json` (or run `npm run foods:pending` for everything). It writes `foods-review/decisions.json` (`approve` with optional corrected `values`, `reject` with a note, `merge`, `update` a shared food after a report, `dismiss` a report).
+4. `npm run foods:apply` shows what would change; `npm run foods:apply -- --yes` writes it. Each change only applies if the food is still in the state the file expects. Corrections reach phones within about half a day, and the person who added the food gets them too.
+
+Needs the latest `supabase/schema.sql` run once (safe to run again).
+
 ## Layout
 
 ```
 app/                 screens (Today, Diet Plan, Progress, Family, Me, Add food, My foods, Cloud, ...)
-src/domain/          pure TS: energy, nutrition, foods, templates, plan, people, cloud, family  (+ __tests__)
+src/domain/          pure TS: energy, nutrition, foods, templates, plan, people, cloud, family, sharedFoods, foodReview  (+ __tests__)
 src/db/              SQLite schema and queries
 src/hooks/ src/ui/   React glue and components
-supabase/            schema.sql for cloud backup
+supabase/            schema.sql for cloud backup, family and shared foods
+scripts/             foods-review.ts (admin tool for shared foods)
 ```
 
 ## Next

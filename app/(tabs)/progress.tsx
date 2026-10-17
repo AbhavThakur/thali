@@ -14,6 +14,7 @@ import { syncReminders } from "../../src/ui/notifications.ts";
 import { calorieTarget } from "../../src/domain/energy.ts";
 import { ACHIEVEMENTS, goalKg, progressKg } from "../../src/domain/rewards.ts";
 import { formatDay } from "../../src/domain/timeline.ts";
+import { weekSummary, type DayState } from "../../src/domain/week.ts";
 import { useProgress } from "../../src/hooks/useProgress.ts";
 import { Loading } from "../../src/ui/Loading.tsx";
 import { PromptSheet } from "../../src/ui/Sheet.tsx";
@@ -21,6 +22,15 @@ import { card, colors } from "../../src/ui/theme.ts";
 import { WeightChart } from "../../src/ui/WeightChart.tsx";
 
 const STAR_COLORS = [colors.track, "#BBF7D0", "#4ADE80", "#15803D"];
+
+const WEEK_BAR_H = 90;
+const WEEK_COLORS: Record<DayState, string> = {
+  on: colors.primary,
+  over: "#F59E0B",
+  under: "#7DD3B0",
+  none: colors.track,
+  future: colors.track,
+};
 
 const ymd = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -59,6 +69,16 @@ export default function ProgressScreen() {
   const drift = stats.currentKg - stats.startKg;
   const todayStr = today();
   const cal = calendarDays();
+  const week = weekSummary(
+    [...days.values()].map((d) => ({
+      date: d.date,
+      logged: true,
+      totals: { kcal: d.kcal },
+      complete: d.stars.allMeals,
+    })),
+    t.kcal,
+    todayStr,
+  );
 
   return (
     <ScrollView
@@ -128,6 +148,53 @@ export default function ProgressScreen() {
             <Text style={styles.muted}>{l}</Text>
           </View>
         ))}
+      </View>
+
+      <View style={card}>
+        <Text style={styles.cardTitle}>This week</Text>
+        <View style={styles.weekBars}>
+          <View
+            pointerEvents="none"
+            style={[styles.weekTarget, { bottom: WEEK_BAR_H / 1.3 + 18 }]}
+          />
+          {week.days.map((d) => (
+            <View key={d.date} style={styles.weekCol}>
+              <View style={styles.weekBarWrap}>
+                <View
+                  style={[
+                    styles.weekBar,
+                    {
+                      height: Math.max(
+                        d.state === "none" || d.state === "future" ? 4 : 8,
+                        Math.min(d.kcal / (t.kcal * 1.3), 1) * WEEK_BAR_H,
+                      ),
+                      backgroundColor: WEEK_COLORS[d.state],
+                    },
+                    d.isToday && styles.weekToday,
+                  ]}
+                  accessibilityLabel={`${d.label}: ${d.state === "none" ? "nothing logged" : d.state === "future" ? "not yet" : `${d.kcal} kcal`}`}
+                />
+              </View>
+              <Text style={[styles.weekLabel, d.isToday && { color: colors.text }]}>
+                {d.label[0]}
+              </Text>
+            </View>
+          ))}
+        </View>
+        <Text style={styles.muted}>
+          {week.countedDays
+            ? `Average ${week.avgKcal} kcal a day over ${week.countedDays} complete ${week.countedDays === 1 ? "day" : "days"} (target ${t.kcal}). Days with a meal missing and today aren't counted.`
+            : `Target ${t.kcal} kcal a day.`}
+        </Text>
+        <Text
+          style={[
+            styles.weekInsight,
+            week.insight.tone === "good" && { color: colors.primaryText },
+            week.insight.tone === "warn" && { color: colors.warnText },
+          ]}
+        >
+          {week.insight.text}
+        </Text>
       </View>
 
       <Pressable
@@ -247,6 +314,26 @@ export default function ProgressScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
+  weekBars: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 14,
+    marginBottom: 10,
+  },
+  weekTarget: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: colors.muted,
+    opacity: 0.4,
+  },
+  weekCol: { flex: 1, alignItems: "center" },
+  weekBarWrap: { height: WEEK_BAR_H, justifyContent: "flex-end" },
+  weekBar: { width: 22, borderRadius: 6 },
+  weekToday: { borderWidth: 2, borderColor: colors.text },
+  weekLabel: { fontSize: 12, fontWeight: "600", color: colors.muted, marginTop: 4 },
+  weekInsight: { fontSize: 14, fontWeight: "600", color: colors.muted, marginTop: 8 },
   center: { alignItems: "center", justifyContent: "center", gap: 12 },
   muted: { fontSize: 12, color: colors.muted },
   cardTitle: { fontSize: 17, fontWeight: "800", color: colors.text },

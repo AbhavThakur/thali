@@ -17,12 +17,20 @@ import {
   deleteBatch,
   deleteLog,
   getSetting,
+  logWeight,
   saveProfile,
   setSetting,
   setWater,
 } from "../../src/db/db.ts";
+import { formatDuration, parseFasting, type FastState, fastProgress } from "../../src/domain/fasting.ts";
 import { FOOD_BY_ID } from "../../src/domain/foods.ts";
-import { formatQty, macrosFor } from "../../src/domain/nutrition.ts";
+import { repeatOffer } from "../../src/domain/repeat.ts";
+import { lastWeighIn, parseWeight, weighInText } from "../../src/domain/weighIn.ts";
+import {
+  describeServing,
+  formatQty,
+  macrosFor,
+} from "../../src/domain/nutrition.ts";
 import {
   applyOverrides,
   buildDayPlan,
@@ -32,6 +40,7 @@ import {
 import { dayStars, type Achievement } from "../../src/domain/rewards.ts";
 import type { SlotId } from "../../src/domain/types.ts";
 import { useProgress, WATER_GOAL } from "../../src/hooks/useProgress.ts";
+import { useBackupNudge } from "../../src/hooks/useBackupNudge.ts";
 import { useToday } from "../../src/hooks/useToday.ts";
 import { CalorieRing } from "../../src/ui/CalorieRing.tsx";
 import { Celebration } from "../../src/ui/Celebration.tsx";
@@ -90,6 +99,7 @@ export default function TodayScreen() {
     date,
     profile,
     logs,
+    yesterday,
     targets,
     consumed,
     streak,
@@ -99,6 +109,7 @@ export default function TodayScreen() {
     reload,
   } = useToday();
   const progress = useProgress();
+  const backup = useBackupNudge(streak);
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const [editName, setEditName] = useState(false);
@@ -107,6 +118,8 @@ export default function TodayScreen() {
   const [celebrate, setCelebrate] = useState<Achievement | null>(null);
   const [touring, setTouring] = useState(false);
   const [askReminders, setAskReminders] = useState(false);
+  const [weighing, setWeighing] = useState(false);
+  const [fast, setFast] = useState<FastState | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const scrollY = useRef(0);
   const headerRef = useRef<View>(null);
@@ -126,6 +139,7 @@ export default function TodayScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      getSetting(db, "fasting").then((raw) => setFast(parseFasting(raw)));
       getSetting(db, "tour_done").then((v) => {
         if (v !== "1") setTimeout(() => setTouring(true), 600);
       });
@@ -286,10 +300,26 @@ export default function TodayScreen() {
     refresh();
   };
 
+  // "Same again": adds earlier entries to today as one batch, so a single Undo removes them all.
+  const repeat = async (
+    label: string,
+    entries: { slot: SlotId; foodId: string; qty: number }[],
+  ) => {
+    const batch = `${Date.now()}-repeat`;
+    await addLogs(db, date, entries, batch);
+    haptic.success();
+    refresh();
+    toast(`${label} added`, {
+      label: "Undo",
+      onPress: () => deleteBatch(db, batch).then(refresh),
+    });
+  };
+
   const stars = dayStars(consumed, targets, [
     ...new Set(logs.map((l) => l.slot)),
   ]);
   const [message, mood] = cheer(consumed.kcal, targets.kcal, logs.length > 0);
+  const dayAgain = repeatOffer(yesterday);
 
   return (
     <ScrollView
@@ -382,6 +412,29 @@ export default function TodayScreen() {
         </View>
       </View>
 
+      {backup.nudge && !askReminders && !touring && (
+        <View style={[card, styles.ask]}>
+          <Text style={styles.slotTitle}>☁️ {backup.nudge.title}</Text>
+          <Text style={styles.muted}>{backup.nudge.body}</Text>
+          <View style={styles.askRow}>
+            <Pressable
+              style={styles.logBtn}
+              onPress={() => router.push("/cloud")}
+              accessibilityRole="button"
+            >
+              <Text style={styles.logBtnText}>Back up now</Text>
+            </Pressable>
+            <Pressable
+              hitSlop={8}
+              onPress={backup.later}
+              accessibilityRole="button"
+            >
+              <Text style={styles.add}>Not now</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       {askReminders && !touring && (
         <View style={[card, styles.ask]}>
           <Text style={styles.slotTitle}>🔔 Want gentle reminders?</Text>
@@ -406,6 +459,42 @@ export default function TodayScreen() {
             </Pressable>
           </View>
         </View>
+      )}
+
+      {logs.length === 0 && dayAgain && !askReminders && !touring && (
+        <View style={[card, styles.ask]}>
+          <Text style={styles.slotTitle}>↺ Same as yesterday?</Text>
+          <Text style={styles.muted}>
+            Copy all of yesterday's meals ({Math.round(dayAgain.kcal)} kcal).
+            You can still change anything.
+          </Text>
+          <View style={styles.askRow}>
+            <Pressable
+              style={styles.logBtn}
+              onPress={() => repeat("Yesterday's meals", dayAgain.entries)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.logBtnText}>Copy yesterday</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {fast?.active && (
+        <Pressable
+          style={[card, styles.ask]}
+          onPress={() => router.push("/fasting")}
+          accessibilityRole="button"
+          accessibilityLabel="Open fasting timer"
+        >
+          <Text style={styles.slotTitle}>⏱ Fasting</Text>
+          <Text style={styles.muted}>
+            {fastProgress(fast.active, Date.now()).done
+              ? `Goal of ${fast.active.goalHours} h reached. You can eat when you're ready.`
+              : `${formatDuration(fastProgress(fast.active, Date.now()).elapsed)} so far, goal ${fast.active.goalHours} h.`}{" "}
+            Tap to open.
+          </Text>
+        </Pressable>
       )}
 
       <View ref={waterRef} collapsable={false} style={card}>
@@ -442,6 +531,26 @@ export default function TodayScreen() {
         </View>
       </View>
 
+      <View style={card}>
+        <View style={styles.slotHeader}>
+          <Text style={styles.slotEmoji}>⚖️</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.slotTitle}>Weigh-in</Text>
+            <Text style={styles.muted}>
+              {weighInText(lastWeighIn(progress.data?.weights ?? [], date))}
+            </Text>
+          </View>
+          <Pressable
+            style={styles.logBtn}
+            onPress={() => setWeighing(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Log your weight"
+          >
+            <Text style={styles.logBtnText}>Log</Text>
+          </Pressable>
+        </View>
+      </View>
+
       {SLOTS.map((slot) => {
         const rows = logs.filter(
           (l) => l.slot === slot.id && FOOD_BY_ID[l.food_id],
@@ -454,6 +563,7 @@ export default function TodayScreen() {
         const suggestion = slotPlan?.options[0];
         const slotTarget = slotPlan?.targetKcal ?? 0;
         const batch = rows.find((l) => l.batch_id)?.batch_id;
+        const again = rows.length === 0 ? repeatOffer(yesterday, slot.id) : null;
         const pct = slotTarget ? Math.min(kcal / slotTarget, 1) : 0;
         return (
           <View
@@ -483,8 +593,9 @@ export default function TodayScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.itemName}>{food.name}</Text>
                     <Text style={styles.muted}>
-                      {formatQty(food, l.qty)} ·{" "}
-                      {Math.round(macrosFor(food, l.qty).kcal)} kcal
+                      {describeServing(food, l.qty)} ·{" "}
+                      {Math.round(macrosFor(food, l.qty).kcal)} kcal · P{" "}
+                      {Math.round(macrosFor(food, l.qty).protein)} g
                     </Text>
                   </View>
                   <Pressable
@@ -511,6 +622,21 @@ export default function TodayScreen() {
                   {Math.round(suggestion.totals.kcal)} kcal
                 </Text>
               </View>
+            )}
+
+            {again && (
+              <Pressable
+                hitSlop={6}
+                style={styles.again}
+                onPress={() => repeat(slot.label, again.entries)}
+                accessibilityRole="button"
+                accessibilityLabel={`Repeat yesterday's ${slot.label}`}
+              >
+                <Text style={styles.add}>
+                  ↺ Repeat yesterday's {slot.label.toLowerCase()} ·{" "}
+                  {Math.round(again.kcal)} kcal
+                </Text>
+              </Pressable>
             )}
 
             <View style={styles.actions}>
@@ -567,6 +693,27 @@ export default function TodayScreen() {
           await saveProfile(db, { ...profile, name });
           rename(person.id, name);
           setEditName(false);
+          refresh();
+        }}
+      />
+      <PromptSheet
+        visible={weighing}
+        title="Your weight today"
+        subtitle="Weigh at the same time each day, ideally after waking up."
+        initial={String(
+          lastWeighIn(progress.data?.weights ?? [], date)?.kg ?? profile.weightKg,
+        )}
+        numeric
+        unit="kg"
+        validate={(v) =>
+          parseWeight(v) ? null : "Enter a weight between 30 and 250 kg."
+        }
+        onClose={() => setWeighing(false)}
+        onSave={async (v) => {
+          await logWeight(db, date, parseWeight(v) as number);
+          syncReminders(db);
+          setWeighing(false);
+          haptic.success();
           refresh();
         }}
       />
@@ -716,4 +863,5 @@ const styles = StyleSheet.create({
   },
   logBtnText: { color: "#fff", fontWeight: "700" },
   add: { color: colors.primaryText, fontWeight: "700" },
+  again: { marginTop: 8 },
 });

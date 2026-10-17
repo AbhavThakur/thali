@@ -8,6 +8,7 @@ import { AppState, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { loadCustomFoods, migrate } from "../src/db/db.ts";
 import { autoBackupIfDue } from "../src/ui/cloudSync.ts";
+import { applyCommunityCache, syncCommunity } from "../src/ui/communitySync.ts";
 import { publishFamily } from "../src/ui/familySync.ts";
 import { registerActiveDb } from "../src/ui/dbAccess.ts";
 import { Loading } from "../src/ui/Loading.tsx";
@@ -50,7 +51,10 @@ function FoodsGate({ children }: { children: ReactNode }) {
     let live = true;
     loadCustomFoods(db)
       .catch(() => {})
-      .finally(() => live && setReady(true));
+      .finally(() => {
+        applyCommunityCache();
+        if (live) setReady(true);
+      });
     return () => {
       live = false;
     };
@@ -67,10 +71,12 @@ function AutoBackup() {
   useEffect(() => {
     void autoBackupIfDue(people);
     void publishFamily(people);
+    void syncCommunity(people);
     const app = AppState.addEventListener("change", (s) => {
       if (s === "active") {
         void autoBackupIfDue(people);
         void publishFamily(people);
+        void syncCommunity(people);
       }
     });
     return () => app.remove();
@@ -116,6 +122,8 @@ function Shell() {
               options={{ title: "Goal and body" }}
             />
             <Stack.Screen name="foods" options={{ title: "My foods" }} />
+            <Stack.Screen name="recipe" options={{ title: "New recipe" }} />
+            <Stack.Screen name="fasting" options={{ title: "Fasting timer" }} />
             <Stack.Screen name="cloud" options={{ title: "Cloud backup" }} />
             <Stack.Screen
               name="about"

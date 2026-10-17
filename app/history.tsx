@@ -26,7 +26,7 @@ import {
   shiftDate,
   type HistoryDay,
 } from "../src/domain/history.ts";
-import { formatQty } from "../src/domain/nutrition.ts";
+import { describeServing } from "../src/domain/nutrition.ts";
 import { FOOD_BY_ID } from "../src/domain/foods.ts";
 import { SLOTS } from "../src/domain/plan.ts";
 import type { Macros } from "../src/domain/types.ts";
@@ -304,7 +304,7 @@ function DayCard({
                     <Text style={styles.itemName}>{it.name}</Text>
                     <Text style={styles.muted}>
                       {FOOD_BY_ID[it.foodId]
-                        ? formatQty(FOOD_BY_ID[it.foodId], it.qty)
+                        ? describeServing(FOOD_BY_ID[it.foodId], it.qty)
                         : it.qty}{" "}
                       · {Math.round(it.kcal)} kcal
                     </Text>

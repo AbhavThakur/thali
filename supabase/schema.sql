@@ -459,3 +459,171 @@ grant execute on function public.in_my_family(uuid), public.family_overview(), p
   public.update_member(text, text, boolean, integer), public.publish_days(jsonb),
   public.send_kudos(uuid, text, text), public.mark_kudos_seen()
   to authenticated;
+
+-- ---------------------------------------------------------------------------------------------
+-- Community foods
+-- Every food someone adds is sent here as "pending". The admin (you, with the service role key, using
+-- scripts/foods-review.ts) checks and fixes it, then approves it. Approved foods are readable by every
+-- install through the approved_foods view; nobody but the admin can change a row after review.
+-- ---------------------------------------------------------------------------------------------
+
+create table if not exists public.community_foods (
+  id               uuid        primary key default gen_random_uuid(),
+  submitter        uuid        references auth.users (id) on delete set null,
+  -- The id the food has on the submitter's phone, so the phone can swap in the checked version.
+  client_id        text        check (client_id is null or char_length(client_id) between 1 and 40),
+  name             text        not null check (char_length(name) between 2 and 60),
+  unit             text        not null check (char_length(unit) between 1 and 30),
+  grams            numeric(7, 1) not null check (grams between 1 and 1000),
+  -- Everything below is per 100 g, like the foods built into the app.
+  kcal             numeric(6, 1) not null check (kcal between 0 and 900),
+  protein          numeric(5, 1) not null check (protein between 0 and 100),
+  carbs            numeric(5, 1) not null check (carbs between 0 and 100),
+  fat              numeric(5, 1) not null check (fat between 0 and 100),
+  fiber            numeric(5, 1) not null default 0 check (fiber between 0 and 100),
+  tags             jsonb       not null default '{}'::jsonb,
+  status           text        not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  -- When this entry is a duplicate, the approved food it was merged into.
+  canonical_id     uuid        references public.community_foods (id) on delete set null,
+  admin_note       text        not null default '' check (char_length(admin_note) <= 300),
+  changed_by_admin boolean     not null default false,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  reviewed_at      timestamptz,
+  unique (submitter, client_id)
+);
+create index if not exists community_foods_status_idx on public.community_foods (status, updated_at);
+
+create table if not exists public.food_reports (
+  id         bigint      generated always as identity primary key,
+  food_id    uuid        not null references public.community_foods (id) on delete cascade,
+  reporter   uuid        references auth.users (id) on delete set null,
+  message    text        not null check (char_length(message) between 3 and 300),
+  resolved   boolean     not null default false,
+  created_at timestamptz not null default now()
+);
+
+alter table public.community_foods enable row level security;
+alter table public.food_reports enable row level security;
+revoke all on public.community_foods, public.food_reports from anon, authenticated;
+
+-- The shared list is readable by everyone, but only approved rows and only these columns (never `submitter`).
+-- The view runs as the caller (security_invoker), so the table's own grants and policy are what protect it.
+grant select (id, name, unit, grams, kcal, protein, carbs, fat, fiber, tags, status, canonical_id, updated_at)
+  on public.community_foods to anon, authenticated;
+drop policy if exists "community_foods_read_approved" on public.community_foods;
+create policy "community_foods_read_approved" on public.community_foods
+  for select to anon, authenticated
+  using (status = 'approved' and canonical_id is null);
+
+create or replace view public.approved_foods with (security_invoker = true) as
+  select id, name, unit, grams, kcal, protein, carbs, fat, fiber, tags, updated_at
+  from public.community_foods
+  where status = 'approved' and canonical_id is null;
+revoke all on public.approved_foods from public;
+grant select on public.approved_foods to anon, authenticated;
+
+create or replace function public.submit_food(
+  p_client_id text, p_name text, p_unit text, p_grams numeric,
+  p_kcal numeric, p_protein numeric, p_carbs numeric, p_fat numeric, p_fiber numeric,
+  p_tags jsonb default '{}'::jsonb
+)
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+  r community_foods%rowtype;
+  dup uuid;
+begin
+  if me is null then raise exception 'thali:Sign in first.'; end if;
+  p_name := btrim(coalesce(p_name, ''));
+  p_unit := btrim(coalesce(p_unit, ''));
+  p_tags := coalesce(p_tags, '{}'::jsonb);
+  if char_length(coalesce(p_client_id, '')) not between 1 and 40 then raise exception 'thali:Missing food id.'; end if;
+  if char_length(p_name) not between 2 and 60 then raise exception 'thali:The food name must be 2 to 60 letters.'; end if;
+  if char_length(p_unit) not between 1 and 30 then raise exception 'thali:The serving name must be 1 to 30 letters.'; end if;
+  if p_grams is null or p_grams < 1 or p_grams > 1000 then raise exception 'thali:The serving weight must be 1 to 1000 g.'; end if;
+  if p_kcal is null or p_kcal < 0 or p_kcal > 900 then raise exception 'thali:Calories per 100 g must be 0 to 900.'; end if;
+  if least(p_protein, p_carbs, p_fat, p_fiber) < 0 or p_protein + p_carbs + p_fat > 100.5 or p_fiber > p_carbs then
+    raise exception 'thali:The protein, carbs, fat and fiber numbers do not add up.';
+  end if;
+  if jsonb_typeof(p_tags) <> 'object' then raise exception 'thali:Bad tags.'; end if;
+
+  select * into r from community_foods where submitter = me and client_id = p_client_id;
+  if found then
+    -- Until it is reviewed the owner can still correct it; after that only the admin can change it.
+    if r.status = 'pending' then
+      update community_foods
+        set name = p_name, unit = p_unit, grams = p_grams, kcal = p_kcal, protein = p_protein,
+            carbs = p_carbs, fat = p_fat, fiber = p_fiber, tags = p_tags, updated_at = now()
+        where id = r.id returning * into r;
+    end if;
+    return json_build_object('id', r.id, 'status', r.status);
+  end if;
+
+  if (select count(*) from community_foods where submitter = me and created_at > now() - interval '1 day') >= 40 then
+    raise exception 'thali:That is plenty of new foods for today. The rest will be sent tomorrow.';
+  end if;
+
+  insert into community_foods (submitter, client_id, name, unit, grams, kcal, protein, carbs, fat, fiber, tags)
+    values (me, p_client_id, p_name, p_unit, p_grams, p_kcal, p_protein, p_carbs, p_fat, p_fiber, p_tags)
+    returning * into r;
+
+  -- Same name and nearly the same calories as a food that is already approved: no review needed.
+  select f.id into dup from community_foods f
+    where f.status = 'approved' and f.canonical_id is null and f.id <> r.id
+      and lower(regexp_replace(btrim(f.name), '\s+', ' ', 'g')) = lower(regexp_replace(p_name, '\s+', ' ', 'g'))
+      and abs(f.kcal - p_kcal) <= greatest(5, p_kcal * 0.1)
+    limit 1;
+  if dup is not null then
+    update community_foods
+      set status = 'approved', canonical_id = dup, admin_note = 'Matched a food that is already in the list.', reviewed_at = now()
+      where id = r.id returning * into r;
+  end if;
+  return json_build_object('id', r.id, 'status', r.status);
+end;
+$$;
+
+-- What happened to each food this account sent, so the phone can show it and swap in the checked version.
+create or replace function public.my_food_submissions()
+returns table (client_id text, status text, community_id uuid, admin_note text, changed_by_admin boolean)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select f.client_id, f.status,
+         case when f.status = 'approved' then coalesce(f.canonical_id, f.id) end,
+         f.admin_note, f.changed_by_admin
+  from community_foods f
+  where f.submitter = auth.uid() and f.client_id is not null
+$$;
+
+create or replace function public.report_food(p_food_id uuid, p_message text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception 'thali:Sign in first.'; end if;
+  p_message := btrim(coalesce(p_message, ''));
+  if char_length(p_message) not between 3 and 300 then raise exception 'thali:Tell us what is wrong in a few words.'; end if;
+  if not exists (select 1 from community_foods where id = p_food_id and status = 'approved') then
+    raise exception 'thali:That food is not in the shared list.';
+  end if;
+  if (select count(*) from food_reports where reporter = me and created_at > now() - interval '1 day') >= 20 then
+    raise exception 'thali:That is plenty of reports for today. Thank you.';
+  end if;
+  insert into food_reports (food_id, reporter, message) values (p_food_id, me, p_message);
+end;
+$$;
+
+revoke all on function public.submit_food(text, text, text, numeric, numeric, numeric, numeric, numeric, numeric, jsonb),
+  public.my_food_submissions(), public.report_food(uuid, text) from public, anon, authenticated;
+grant execute on function public.submit_food(text, text, text, numeric, numeric, numeric, numeric, numeric, numeric, jsonb),
+  public.my_food_submissions(), public.report_food(uuid, text) to authenticated;

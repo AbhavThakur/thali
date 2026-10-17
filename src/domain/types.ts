@@ -65,6 +65,12 @@ export type Food = {
   verified: boolean;
   /** Added by the user; stored on the phone, not part of the built-in list. */
   custom?: boolean;
+  /** From the shared list that the admin checked; downloaded from the cloud. */
+  community?: boolean;
+  /** A one-off "quick add" entry: kept so old logs still resolve, never listed, searched or shared. */
+  quick?: boolean;
+  /** Set when the food was made by the recipe builder, so it can be opened and edited again. */
+  recipe?: { items: PlanItemInput[]; cookedGrams: number; servings: number };
 };
 
 export type TemplateItem = { foodId: string; qty: number; step: number };
