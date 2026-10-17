@@ -12,6 +12,8 @@ import {
 import {
   addLogs,
   getFavouriteIds,
+  getLastQuantities,
+  getLogs,
   getProfile,
   getRecentFoodIds,
   loadCustomFoods,
@@ -19,24 +21,27 @@ import {
   toggleFavourite,
   today,
 } from "../src/db/db.ts";
+import { calorieTarget, macroTargets } from "../src/domain/energy.ts";
+import { dayImpact, explainFood } from "../src/domain/explain.ts";
 import { allFoods, FOOD_BY_ID } from "../src/domain/foods.ts";
 import {
   describeServing,
   formatQty,
   gramsFor,
   isAllowed,
-  macroLine,
   macrosFor,
   qtyFromGrams,
+  sumMacros,
 } from "../src/domain/nutrition.ts";
 import { SLOTS } from "../src/domain/plan.ts";
+import { searchFoods } from "../src/domain/search.ts";
 import {
   buildQuickFood,
   EMPTY_QUICK_ADD,
   newQuickFoodId,
   type QuickAddInput,
 } from "../src/domain/quickAdd.ts";
-import type { DietType, Food, SlotId } from "../src/domain/types.ts";
+import type { DietType, Food, Macros, SlotId } from "../src/domain/types.ts";
 import { freshSession, getCloud, loadSession } from "../src/ui/cloudSync.ts";
 import { PromptSheet, Sheet, sheetStyles } from "../src/ui/Sheet.tsx";
 import { colors } from "../src/ui/theme.ts";
@@ -62,18 +67,37 @@ export default function AddFood() {
   const [byGrams, setByGrams] = useState(false);
   const [gramsText, setGramsText] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
+  const [lastQty, setLastQty] = useState<Record<string, number>>({});
   const [favourites, setFavourites] = useState<string[]>([]);
   const [tick, setTick] = useState(0);
   const [busy, setBusy] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [quick, setQuick] = useState<QuickAddInput | null>(null);
   const [quickError, setQuickError] = useState<string | null>(null);
+  const [day, setDay] = useState<{ consumed: Macros; target: Macros } | null>(
+    null,
+  );
+  const [showWhy, setShowWhy] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
-    getProfile(db).then((p) => p && setDiet(p.dietType));
+    (async () => {
+      const p = await getProfile(db);
+      if (!p) return;
+      setDiet(p.dietType);
+      const logs = await getLogs(db, date);
+      setDay({
+        target: macroTargets(p, calorieTarget(p).kcal),
+        consumed: sumMacros(
+          logs
+            .filter((l) => FOOD_BY_ID[l.food_id])
+            .map((l) => macrosFor(FOOD_BY_ID[l.food_id], l.qty)),
+        ),
+      });
+    })();
     getRecentFoodIds(db).then(setRecent);
-  }, [db]);
+    getLastQuantities(db).then(setLastQty);
+  }, [db, date]);
 
   // Foods created on the My foods screen show up when coming back here.
   useFocusEffect(
@@ -84,10 +108,10 @@ export default function AddFood() {
   );
 
   const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
     if (!diet) return [];
-    return allFoods().filter(
-      (f) => isAllowed(f, diet) && (!q || f.name.toLowerCase().includes(q)),
+    return searchFoods(
+      allFoods().filter((f) => isAllowed(f, diet)),
+      query,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, diet, tick]);
@@ -117,13 +141,19 @@ export default function AddFood() {
   const pick = (f: Food) => {
     haptic.tap();
     setSelected(f);
-    setQty(1);
+    const last = lastQty[f.id];
+    setQty(last && last >= 0.5 && last <= 20 ? last : 1);
     setByGrams(false);
+    setShowWhy(false);
   };
 
   const stepQty = (delta: number) => {
     if (!selected) return;
-    const next = Math.max(0.5, qty + delta);
+    setServings(Math.max(0.5, qty + delta));
+  };
+
+  const setServings = (next: number) => {
+    if (!selected) return;
     setQty(next);
     if (byGrams) setGramsText(String(gramsFor(selected, next)));
   };
@@ -175,6 +205,12 @@ export default function AddFood() {
       toast("Could not add that. Please try again.");
     }
   };
+
+  const shown = selected ? macrosFor(selected, qty) : null;
+  const impact =
+    selected && shown && day && !selected.quick
+      ? dayImpact(day.consumed, day.target, shown)
+      : null;
 
   return (
     <View style={styles.screen}>
@@ -324,6 +360,76 @@ export default function AddFood() {
           </Pressable>
         )}
       />
+      {selected && shown && (
+        <View style={styles.preview} accessibilityLiveRegion="polite">
+          <View style={styles.previewTop}>
+            <Text style={styles.bigKcal}>
+              {Math.round(shown.kcal)}
+              <Text style={styles.bigUnit}> kcal</Text>
+            </Text>
+            <View style={styles.chips}>
+              {(
+                [
+                  ["Protein", shown.protein],
+                  ["Carbs", shown.carbs],
+                  ["Fat", shown.fat],
+                  ["Fiber", shown.fiber],
+                ] as [string, number][]
+              ).map(([label, g]) => (
+                <View key={label} style={styles.macroChip}>
+                  <Text style={styles.macroValue}>{Math.round(g)} g</Text>
+                  <Text style={styles.macroLabel}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+          {impact ? (
+            <Text
+              style={[styles.impact, impact.over && { color: colors.danger }]}
+            >
+              {impact.kcal} {impact.protein}
+            </Text>
+          ) : null}
+          {!byGrams && (
+            <View style={styles.qtyRow}>
+              {[0.5, 1, 1.5, 2, 3].map((n) => (
+                <Pressable
+                  key={n}
+                  onPress={() => {
+                    haptic.tap();
+                    setServings(n);
+                  }}
+                  style={[styles.qtyChip, qty === n && styles.recentChipOn]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${formatQty(selected, n)}`}
+                  accessibilityState={{ selected: qty === n }}
+                >
+                  <Text
+                    style={[styles.recentText, qty === n && { color: "#fff" }]}
+                  >
+                    {n === 0.5 ? "½" : n === 1.5 ? "1½" : n}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          <Pressable
+            onPress={() => setShowWhy((v) => !v)}
+            hitSlop={8}
+            accessibilityRole="button"
+          >
+            <Text style={styles.link}>
+              {showWhy ? "Hide" : "How is this calculated?"}
+            </Text>
+          </Pressable>
+          {showWhy &&
+            explainFood(selected, qty).map((line) => (
+              <Text key={line} style={styles.why}>
+                {line}
+              </Text>
+            ))}
+        </View>
+      )}
       {selected && (
         <View style={styles.footer}>
           <Pressable
@@ -351,10 +457,6 @@ export default function AddFood() {
             ) : (
               <Text style={styles.name}>{describeServing(selected, qty)}</Text>
             )}
-            <Text style={styles.muted}>
-              {Math.round(macrosFor(selected, qty).kcal)} kcal ·{" "}
-              {macroLine(macrosFor(selected, qty))}
-            </Text>
             <Pressable
               onPress={toggleGrams}
               hitSlop={8}
@@ -506,6 +608,34 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg, padding: 16 },
   muted: { fontSize: 13, color: colors.muted },
   gramsRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  preview: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 10,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.track,
+  },
+  previewTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+  bigKcal: { fontSize: 30, fontWeight: "800", color: colors.text },
+  bigUnit: { fontSize: 14, fontWeight: "600", color: colors.muted },
+  chips: { flex: 1, flexDirection: "row", justifyContent: "space-between" },
+  macroChip: { alignItems: "center" },
+  macroValue: { fontSize: 15, fontWeight: "700", color: colors.text },
+  macroLabel: { fontSize: 12, color: colors.muted },
+  impact: { fontSize: 13, color: colors.text },
+  qtyRow: { flexDirection: "row", gap: 8 },
+  qtyChip: {
+    minWidth: 44,
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: colors.track,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  why: { fontSize: 13, color: colors.muted, lineHeight: 18 },
   gramsInput: {
     minWidth: 64,
     textAlign: "center",
@@ -520,7 +650,12 @@ const styles = StyleSheet.create({
   },
   link: { fontSize: 13, fontWeight: "700", color: colors.primaryText },
   quickLink: { alignSelf: "flex-start", paddingBottom: 8, minHeight: 32 },
-  quickLabel: { fontSize: 13, fontWeight: "600", color: colors.text, marginBottom: 4 },
+  quickLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: 4,
+  },
   quickInput: {
     borderWidth: 1,
     borderColor: colors.track,
@@ -531,7 +666,11 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   quickError: { color: colors.danger, marginTop: 10, fontWeight: "600" },
-  report: { fontSize: 12, color: colors.muted, textDecorationLine: "underline" },
+  report: {
+    fontSize: 12,
+    color: colors.muted,
+    textDecorationLine: "underline",
+  },
   checked: { fontSize: 12, fontWeight: "700", color: colors.primaryText },
   input: {
     backgroundColor: colors.card,

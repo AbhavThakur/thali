@@ -13,10 +13,19 @@ import {
 import { allFoods, FOOD_BY_ID } from "../domain/foods.ts";
 import { describeServing, isAllowed } from "../domain/nutrition.ts";
 import { optionFromItems } from "../domain/plan.ts";
+import { searchFoods } from "../domain/search.ts";
 import type { DietType, MealOption, PlanItemInput } from "../domain/types.ts";
 import { colors } from "./theme.ts";
 
 const STEP = 0.5;
+
+export type EditScope = "day" | "week" | "all";
+
+const SCOPES: [EditScope, string][] = [
+  ["day", "Only this day"],
+  ["week", "This week"],
+  ["all", "Every day"],
+];
 
 export function EditMealSheet({
   option,
@@ -32,17 +41,17 @@ export function EditMealSheet({
   targetKcal: number;
   diet: DietType;
   onClose: () => void;
-  onSave: (items: PlanItemInput[], everyDay: boolean) => void;
+  onSave: (items: PlanItemInput[], scope: EditScope) => void;
   onReset: () => void;
 }) {
   const [items, setItems] = useState<PlanItemInput[]>([]);
-  const [everyDay, setEveryDay] = useState(false);
+  const [scope, setScope] = useState<EditScope>("day");
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     if (!option) return;
     setItems(option.items.map((it) => ({ foodId: it.food.id, qty: it.qty })));
-    setEveryDay(false);
+    setScope("day");
     setQuery("");
   }, [option]);
 
@@ -51,16 +60,13 @@ export function EditMealSheet({
     [option, items],
   );
   const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    return allFoods()
-      .filter(
-        (f) =>
-          isAllowed(f, diet) &&
-          f.name.toLowerCase().includes(q) &&
-          !items.some((it) => it.foodId === f.id),
-      )
-      .slice(0, 6);
+    if (!query.trim()) return [];
+    return searchFoods(
+      allFoods().filter(
+        (f) => isAllowed(f, diet) && !items.some((it) => it.foodId === f.id),
+      ),
+      query,
+    ).slice(0, 6);
   }, [query, diet, items]);
 
   const change = (foodId: string, delta: number) =>
@@ -174,17 +180,16 @@ export function EditMealSheet({
           </ScrollView>
 
           <View style={styles.scope}>
-            {[
-              [false, "Only this day"],
-              [true, "Every day"],
-            ].map(([v, label]) => (
+            {SCOPES.map(([v, label]) => (
               <Pressable
-                key={String(v)}
-                onPress={() => setEveryDay(v as boolean)}
-                style={[styles.chip, everyDay === v && styles.chipActive]}
+                key={v}
+                onPress={() => setScope(v)}
+                style={[styles.chip, scope === v && styles.chipActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: scope === v }}
               >
                 <Text
-                  style={[styles.chipText, everyDay === v && { color: "#fff" }]}
+                  style={[styles.chipText, scope === v && { color: "#fff" }]}
                 >
                   {label}
                 </Text>
@@ -195,7 +200,7 @@ export function EditMealSheet({
           <Pressable
             style={[styles.save, !preview.items.length && { opacity: 0.5 }]}
             disabled={!preview.items.length}
-            onPress={() => onSave(items, everyDay)}
+            onPress={() => onSave(items, scope)}
           >
             <Text style={styles.saveText}>Save</Text>
           </Pressable>

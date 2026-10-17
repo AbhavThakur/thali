@@ -24,7 +24,7 @@ export type TourStep = {
 type Rect = { x: number; y: number; w: number; h: number };
 
 const PAD = 6;
-const TAB_COUNT = 4;
+const TAB_COUNT = 5;
 const TAB_BAR = 56;
 
 const measure = (ref: RefObject<View | null>) =>

@@ -148,6 +148,18 @@ export default function HistoryScreen() {
             </Text>
           </Pressable>
         ))}
+        <Pressable
+          onPress={() => {
+            haptic.tap();
+            setOpen(now);
+            scroll.current?.scrollTo({ y: 0, animated: true });
+          }}
+          style={[styles.chip, { marginLeft: "auto" }]}
+          accessibilityRole="button"
+          accessibilityLabel="Jump to today"
+        >
+          <Text style={styles.chipText}>Today ↑</Text>
+        </Pressable>
       </View>
 
       <View style={[card, styles.summary]}>

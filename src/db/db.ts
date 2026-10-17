@@ -166,6 +166,16 @@ export async function getRecentFoodIds(
   return rows.map((r) => r.food_id);
 }
 
+/** The quantity each food was last logged with, so Add food can start from what you usually eat. */
+export async function getLastQuantities(
+  db: SQLiteDatabase,
+): Promise<Record<string, number>> {
+  const rows = await db.getAllAsync<{ food_id: string; qty: number }>(
+    "SELECT food_id, qty FROM food_log WHERE id IN (SELECT MAX(id) FROM food_log GROUP BY food_id)",
+  );
+  return Object.fromEntries(rows.map((r) => [r.food_id, r.qty]));
+}
+
 export async function getLoggedDates(db: SQLiteDatabase): Promise<string[]> {
   const rows = await db.getAllAsync<{ date: string }>(
     "SELECT DISTINCT date FROM food_log ORDER BY date DESC LIMIT ?",

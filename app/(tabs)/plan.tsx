@@ -311,7 +311,7 @@ export default function PlanScreen() {
         targetKcal={editing?.slot.targetKcal ?? 0}
         diet={profile.dietType}
         onClose={() => setEditing(null)}
-        onSave={async (items, everyDay) => {
+        onSave={async (items, scope) => {
           if (!editing) return;
           const base = {
             slot: editing.slot.slot,
@@ -319,11 +319,21 @@ export default function PlanScreen() {
             items,
           };
           // "Every day" also drops this day's own edit so the new one shows.
-          if (everyDay)
+          if (scope === "all")
             await resetOverride(db, base.slot, base.templateId, day);
-          await saveOverride(db, { ...base, date: everyDay ? "" : day });
+          // The meal only changes on days where this suggestion comes up.
+          for (const d of scope === "week"
+            ? week
+            : [scope === "all" ? "" : day])
+            await saveOverride(db, { ...base, date: d });
           haptic.success();
-          toast(everyDay ? "Saved for every day" : "Saved for this day");
+          toast(
+            scope === "all"
+              ? "Saved for every day"
+              : scope === "week"
+                ? "Saved for this week"
+                : "Saved for this day",
+          );
           setEditing(null);
           setRev((r) => r + 1);
         }}

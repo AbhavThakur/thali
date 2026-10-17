@@ -22,10 +22,19 @@ import {
   setSetting,
   setWater,
 } from "../../src/db/db.ts";
-import { formatDuration, parseFasting, type FastState, fastProgress } from "../../src/domain/fasting.ts";
+import {
+  formatDuration,
+  parseFasting,
+  type FastState,
+  fastProgress,
+} from "../../src/domain/fasting.ts";
 import { FOOD_BY_ID } from "../../src/domain/foods.ts";
 import { repeatOffer } from "../../src/domain/repeat.ts";
-import { lastWeighIn, parseWeight, weighInText } from "../../src/domain/weighIn.ts";
+import {
+  lastWeighIn,
+  parseWeight,
+  weighInText,
+} from "../../src/domain/weighIn.ts";
 import {
   describeServing,
   formatQty,
@@ -38,6 +47,7 @@ import {
   SLOTS,
 } from "../../src/domain/plan.ts";
 import { dayStars, type Achievement } from "../../src/domain/rewards.ts";
+import { reviewDay } from "../../src/domain/dayReview.ts";
 import type { SlotId } from "../../src/domain/types.ts";
 import { useProgress, WATER_GOAL } from "../../src/hooks/useProgress.ts";
 import { useBackupNudge } from "../../src/hooks/useBackupNudge.ts";
@@ -49,6 +59,7 @@ import { MacroBars } from "../../src/ui/MacroBars.tsx";
 import { Mascot, type Mood } from "../../src/ui/Mascot.tsx";
 import { Loading } from "../../src/ui/Loading.tsx";
 import { PeopleSheet, usePeople } from "../../src/ui/People.tsx";
+import { MealHelp } from "../../src/ui/MealHelp.tsx";
 import { PromptSheet } from "../../src/ui/Sheet.tsx";
 import { card, colors, isDark } from "../../src/ui/theme.ts";
 import { useToast } from "../../src/ui/Toast.tsx";
@@ -119,6 +130,7 @@ export default function TodayScreen() {
   const [touring, setTouring] = useState(false);
   const [askReminders, setAskReminders] = useState(false);
   const [weighing, setWeighing] = useState(false);
+  const [helpSlot, setHelpSlot] = useState<SlotId | null>(null);
   const [fast, setFast] = useState<FastState | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const scrollY = useRef(0);
@@ -212,9 +224,14 @@ export default function TodayScreen() {
         tab: 2,
       },
       {
+        title: "Your family",
+        body: "Join with an invite code to cheer each other on. Only daily effort is shared, never rankings.",
+        tab: 3,
+      },
+      {
         title: "All about you",
         body: "Update your details, back up your data, or replay this tour any time.",
-        tab: 3,
+        tab: 4,
       },
     ],
     [],
@@ -320,6 +337,16 @@ export default function TodayScreen() {
   ]);
   const [message, mood] = cheer(consumed.kcal, targets.kcal, logs.length > 0);
   const dayAgain = repeatOffer(yesterday);
+  const review = reviewDay({
+    eaten: consumed,
+    target: targets,
+    slotsLogged: [...new Set(logs.map((l) => l.slot))],
+    water,
+    waterGoal: WATER_GOAL,
+    goal: profile.goal,
+    diet: profile.dietType,
+    hour: new Date().getHours(),
+  });
 
   return (
     <ScrollView
@@ -411,6 +438,13 @@ export default function TodayScreen() {
           <Text style={styles.cheerText}>{message}</Text>
         </View>
       </View>
+
+      {review && !touring && (
+        <View style={[card, styles.ask]}>
+          <Text style={styles.slotTitle}>🌙 {review.headline}</Text>
+          <Text style={styles.muted}>{review.tip}</Text>
+        </View>
+      )}
 
       {backup.nudge && !askReminders && !touring && (
         <View style={[card, styles.ask]}>
@@ -563,7 +597,8 @@ export default function TodayScreen() {
         const suggestion = slotPlan?.options[0];
         const slotTarget = slotPlan?.targetKcal ?? 0;
         const batch = rows.find((l) => l.batch_id)?.batch_id;
-        const again = rows.length === 0 ? repeatOffer(yesterday, slot.id) : null;
+        const again =
+          rows.length === 0 ? repeatOffer(yesterday, slot.id) : null;
         const pct = slotTarget ? Math.min(kcal / slotTarget, 1) : 0;
         return (
           <View
@@ -581,6 +616,15 @@ export default function TodayScreen() {
                 </Text>
               </View>
               {rows.length > 0 && <Text style={styles.done}>✓</Text>}
+              <Pressable
+                hitSlop={8}
+                onPress={() => setHelpSlot(slot.id)}
+                style={styles.info}
+                accessibilityRole="button"
+                accessibilityLabel={`How ${slot.label} calories are worked out`}
+              >
+                <Text style={styles.infoText}>ⓘ</Text>
+              </Pressable>
             </View>
             <View style={styles.bar}>
               <View style={[styles.barFill, { width: `${pct * 100}%` }]} />
@@ -703,7 +747,8 @@ export default function TodayScreen() {
         title="Your weight today"
         subtitle="Weigh at the same time each day, ideally after waking up."
         initial={String(
-          lastWeighIn(progress.data?.weights ?? [], date)?.kg ?? profile.weightKg,
+          lastWeighIn(progress.data?.weights ?? [], date)?.kg ??
+            profile.weightKg,
         )}
         numeric
         unit="kg"
@@ -720,6 +765,12 @@ export default function TodayScreen() {
         }}
       />
       <PeopleSheet visible={switching} onClose={() => setSwitching(false)} />
+      <MealHelp
+        visible={helpSlot !== null}
+        profile={profile}
+        slot={helpSlot ?? "breakfast"}
+        onClose={() => setHelpSlot(null)}
+      />
       <Celebration achievement={celebrate} onClose={() => setCelebrate(null)} />
       <Tour
         steps={tourSteps}
@@ -819,6 +870,13 @@ const styles = StyleSheet.create({
   slotEmoji: { fontSize: 28 },
   slotTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
   done: { fontSize: 18, color: colors.primaryText, fontWeight: "800" },
+  info: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoText: { fontSize: 22, color: colors.muted },
   bar: {
     height: 4,
     borderRadius: 2,
