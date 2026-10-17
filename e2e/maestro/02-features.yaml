@@ -1,0 +1,96 @@
+appId: com.family.thali
+---
+- launchApp:
+    clearState: true
+- runFlow: subflows/onboard.yaml
+
+# Weigh-in from Today
+- tapOn: "Log your weight"
+- tapOn: "Your weight today"
+- eraseText: 10
+- inputText: "69.8"
+# No hideKeyboard in sheets: on Android, Back closes the whole sheet. With the keyboard open the first
+# tap can be used up closing it, so tap again if the button is still there.
+- tapOn: "Save"
+- tapOn:
+    text: "Save"
+    optional: true
+- assertVisible: "69.8 kg · today"
+- takeScreenshot: ${SHOTS}/10-weighed-in
+
+# Quick add on dinner
+- scroll
+- scroll
+- scroll
+- tapOn: "Add food to Dinner"
+- assertVisible: "Adding to Dinner"
+- tapOn: "Quick add calories"
+- tapOn: "What was it\\? \\(optional\\)"
+- inputText: "Wedding buffet"
+- tapOn: "Calories \\(kcal\\)"
+- inputText: "700"
+- takeScreenshot: ${SHOTS}/11-quick-add
+- tapOn: "Add to Dinner"
+- tapOn:
+    text: "Add to Dinner"
+    optional: true
+- tapOn:
+    text: "Yay!.*"
+    optional: true
+- assertVisible: "Wedding buffet"
+
+# Recipe from ingredients
+- tapOn: "Me"
+- scrollUntilVisible:
+    element: "My foods"
+- tapOn: "My foods"
+- assertVisible: "Nothing here yet."
+- tapOn: ".*Make a recipe.*"
+- tapOn: "Recipe name"
+- inputText: "Sunday khichdi"
+- hideKeyboard
+- tapOn: "\\+ Add ingredient"
+- inputText: "toor"
+- tapOn: "Add Toor dal, raw"
+- tapOn: "Cooked weight in grams"
+- inputText: "600"
+- tapOn: "Number of servings"
+- inputText: "4"
+- hideKeyboard
+- assertVisible: ".*1 katori.*150 g.*"
+- takeScreenshot: ${SHOTS}/12-recipe
+- tapOn: "Save recipe"
+- assertVisible: "Sunday khichdi"
+- takeScreenshot: ${SHOTS}/13-my-foods
+
+# Fasting
+- back
+- scrollUntilVisible:
+    element: "Fasting timer"
+- tapOn: "Fasting timer"
+- tapOn: "14 hours"
+- tapOn: "Start fast now"
+- assertVisible: "You've been fasting for"
+- takeScreenshot: ${SHOTS}/14-fasting
+- tapOn: "End fast"
+- tapOn: "End fast"
+- assertVisible: "Start a fast, aiming for"
+
+# The week
+- back
+- tapOn: "Progress"
+- scrollUntilVisible:
+    element: "This week"
+- assertVisible: "This week"
+- takeScreenshot: ${SHOTS}/15-week
+
+# Everything survives a restart
+- stopApp
+- launchApp
+- tapOn: "Today"
+- assertVisible: "69.8 kg · today"
+- scroll
+- scroll
+- scroll
+- assertVisible: "Wedding buffet"
+- takeScreenshot: ${SHOTS}/16-after-restart

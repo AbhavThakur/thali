@@ -103,7 +103,7 @@ export default function Fasting() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={{ paddingVertical: 16 }}
+      contentContainerStyle={{ paddingTop: 16, paddingBottom: 48 }}
     >
       {access.caution ? (
         <View style={card}>

@@ -673,6 +673,8 @@ export default function TodayScreen() {
                 onPress={() =>
                   router.push({ pathname: "/add", params: { slot: slot.id } })
                 }
+                accessibilityRole="button"
+                accessibilityLabel={`Add food to ${slot.label}`}
               >
                 <Text style={styles.add}>+ Add food</Text>
               </Pressable>

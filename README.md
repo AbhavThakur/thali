@@ -10,6 +10,8 @@ npm start          # scan the QR code with Expo Go (Android/iOS)
 npm test           # domain tests (Node built-in runner, no deps needed)
 npm run typecheck
 npm run e2e        # end-to-end on an Android emulator with Expo Go + Metro running
+npm run e2e:device # Maestro flows on a real Android build in the emulator (needs Maestro, see below)
+npm run e2e:device # Maestro flows on a real Android build in the emulator (needs Maestro, see below)
 npm run e2e:web    # Playwright end-to-end tests on Expo web (starts the web server itself; uses your installed Chrome)
 npm run build      # release APK: android/app/build/outputs/apk/release/app-release.apk (needs ANDROID_HOME; don't use sudo)
 ```
@@ -43,6 +45,24 @@ In the app: Me → Cloud backup → email → code. The anon key is public by de
 Sign-in without email (optional): turn on Authentication → Sign In / Providers → "Allow anonymous sign-ins", and re-run `supabase/schema.sql` (it is safe to run again). In the app choose "Start without email". The server makes a random recovery code for the phone; entering it on a new phone moves the backups there. Only a hash of the code is stored. Lose the code and the backup can't be recovered, so the app asks people to save it.
 
 Keeping the free project awake: Supabase pauses free projects after 7 days without activity. `.github/workflows/supabase-keepalive.yml` pings the database every Monday and Thursday. Push the repo to GitHub, then add two repository secrets (Settings → Secrets and variables → Actions): `SUPABASE_URL` and `SUPABASE_ANON_KEY`. Run it once from the Actions tab to check it passes. GitHub stops scheduled runs after 60 days with no commits on public repos, so make a commit now and then, or use a private repo.
+
+## Testing on the Android emulator (real app)
+
+`npm run e2e:device` installs a real release build of the app on the `Pixel_10_Pro` emulator (it starts the emulator if needed) and runs the Maestro flows in `e2e/maestro/`: onboarding to Today, then a features flow (weigh-in, quick add, recipe, fasting, the weekly view, and a restart to check that data survives). Screenshots and a JUnit report go to `e2e/artifacts/device/android/`.
+
+- One-time: `brew install mobile-dev-inc/tap/maestro` (needs Java 17 or newer).
+- `npm run e2e:device` reuses the last test build; `npm run e2e:device -- --build` makes a fresh one (about 4 minutes); `-- --flow 02` runs one flow.
+- The test build is made with `EXPO_PUBLIC_E2E=1`: it never installs published updates and says "test build" at the bottom of the Me tab. It also leaves `android/` holding a test build, so run `npm run build` again before sharing an APK.
+- Flows find things by text or accessibility label, so give new buttons a label. Avoid `hideKeyboard` inside sheets (Back closes the sheet on Android), and expect the "Achievement unlocked" pop-up after a first log.
+- `npm run e2e:web` (Playwright on Expo web) is the quick check; the emulator run is the one that sees real layout and the keyboard.
+
+## Testing on the Android emulator (real app)
+
+`npm run e2e:device` installs a real release build of the app on the `Pixel_10_Pro` emulator (it starts it if needed) and r`npm run e2e:device` installs a real release build of the app on the `Pixel_10_Pro` emulator (it starts it if needed) and r`npm run e2e:device` installs a real release build of the app on the `Pixel_10_Pro` emulator (it starts ts`npm run e2e:device` installs a real release build of the ac/tap/maestro` (needs Java 17+, which this Mac has).
+- `npm run e2e:device` reuses the last test build; `npm run e2e:device -- --build` makes a fresh one (about 4 minutes); `-- --flow 02` runs one flow.
+- The test build is made with `EXPO_PUBLIC_E2E=1`: it never installs published updates and says "test build" at the bottom of the Me tab. That also leaves `android/` holding a test build, so run `npm run build` again before sharing an APK.
+- Flows find things by text or accessibility label, so give new buttons a label. Avoid `hideKeyboard` inside sheets (Back closes the sheet on Android) and expect the "Achievement unlocked" pop-up after a first log.
+- `npm run e2e:web` (Playwright on Expo web) is the quick check; the emulator run is the one that sees real layout and the keyboard.
 
 ## Shipping updates (no more APK links)
 

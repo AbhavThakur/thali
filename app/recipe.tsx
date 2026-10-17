@@ -134,7 +134,7 @@ export default function RecipeScreen() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={{ paddingVertical: 16 }}
+      contentContainerStyle={{ paddingTop: 16, paddingBottom: 48 }}
       keyboardShouldPersistTaps="handled"
     >
       <Stack.Screen options={{ title: id ? "Edit recipe" : "New recipe" }} />

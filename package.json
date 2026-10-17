@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "e2e": "node e2e/run.mjs",
     "ship": "npx eas-cli@latest update --channel production --environment production",
+    "e2e:device": "node scripts/e2e-device.mjs",
     "e2e:web": "playwright test",
     "e2e:web:report": "playwright show-report",
     "foods:auto": "node --experimental-strip-types --no-warnings scripts/foods-review.ts auto",

@@ -1,0 +1,17 @@
+appId: com.family.thali
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Get started"
+- runFlow: subflows/onboard.yaml
+- takeScreenshot: ${SHOTS}/01-today
+- assertVisible: ".*kcal.*"
+- tapOn: "Diet Plan"
+- assertVisible: ".*Breakfast.*"
+- takeScreenshot: ${SHOTS}/02-plan
+- tapOn: "Progress"
+- assertVisible: "Weight"
+- takeScreenshot: ${SHOTS}/03-progress
+- tapOn: "Me"
+- assertVisible: "Goal and body"
+- takeScreenshot: ${SHOTS}/04-me

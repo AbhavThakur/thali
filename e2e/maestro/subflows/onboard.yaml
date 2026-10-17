@@ -1,0 +1,36 @@
+# Fresh install to Today: a 32-year-old, 70 kg to 63 kg, vegetarian, nothing in the health check.
+appId: com.family.thali
+---
+- tapOn: "Get started"
+- tapOn: "Name"
+- inputText: "Asha"
+- hideKeyboard
+- tapOn: "Continue"
+- tapOn: "Age.*"
+- inputText: "32"
+- hideKeyboard
+- tapOn: "Continue"
+- tapOn: "Lose weight"
+- tapOn: "Continue"
+- tapOn: "Height in cm.*"
+- inputText: "160"
+- hideKeyboard
+- tapOn: "Current weight.*"
+- inputText: "70"
+- hideKeyboard
+- tapOn: ".*Steady goal.*"
+- tapOn: "Continue"
+- tapOn: ".*On my feet.*"
+- tapOn: "Continue"
+- tapOn: "Vegetarian"
+- tapOn: "Continue"
+- assertVisible: "Here's a date to aim for"
+- tapOn: "Continue"
+- tapOn: "None of these.*"
+- tapOn: "Continue"
+- assertVisible: ".*your plan is ready.*"
+- tapOn: "Start my plan"
+- tapOn:
+    text: "Skip"
+    optional: true
+- assertVisible: "Water"
