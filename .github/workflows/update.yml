@@ -1,0 +1,36 @@
+# Publishes the app's JavaScript to every installed phone each time main changes.
+# One-time setup is in README.md ("Shipping updates").
+name: update
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: eas-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "Add an EXPO_TOKEN secret to this repo (README: Shipping updates)."
+            exit 1
+          fi
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Publish update
+        run: eas update --channel production --environment production --non-interactive --message "$(git log -1 --pretty=%s)"

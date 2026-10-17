@@ -1,4 +1,5 @@
 import { router, useFocusEffect } from "expo-router";
+import { versionInfo } from "../../src/ui/appUpdates";
 import { useSQLiteContext } from "expo-sqlite";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -355,6 +356,9 @@ export default function ProfileScreen() {
         </Pressable>
       </Sheet>
       <PeopleSheet visible={switching} onClose={() => setSwitching(false)} />
+      <Text style={[styles.muted, { textAlign: "center", marginTop: 8 }]}>
+        {versionInfo()}
+      </Text>
     </ScrollView>
   );
 }

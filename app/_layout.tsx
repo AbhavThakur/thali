@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { AppState, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { loadCustomFoods, migrate } from "../src/db/db.ts";
+import { checkForAppUpdate } from "../src/ui/appUpdates";
 import { autoBackupIfDue } from "../src/ui/cloudSync.ts";
 import { applyCommunityCache, syncCommunity } from "../src/ui/communitySync.ts";
 import { publishFamily } from "../src/ui/familySync.ts";
@@ -72,11 +73,13 @@ function AutoBackup() {
     void autoBackupIfDue(people);
     void publishFamily(people);
     void syncCommunity(people);
+    void checkForAppUpdate();
     const app = AppState.addEventListener("change", (s) => {
       if (s === "active") {
         void autoBackupIfDue(people);
         void publishFamily(people);
         void syncCommunity(people);
+        void checkForAppUpdate();
       }
     });
     return () => app.remove();

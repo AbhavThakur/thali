@@ -44,6 +44,24 @@ Sign-in without email (optional): turn on Authentication → Sign In / Providers
 
 Keeping the free project awake: Supabase pauses free projects after 7 days without activity. `.github/workflows/supabase-keepalive.yml` pings the database every Monday and Thursday. Push the repo to GitHub, then add two repository secrets (Settings → Secrets and variables → Actions): `SUPABASE_URL` and `SUPABASE_ANON_KEY`. Run it once from the Actions tab to check it passes. GitHub stops scheduled runs after 60 days with no commits on public repos, so make a commit now and then, or use a private repo.
 
+## Shipping updates (no more APK links)
+
+After a one-time setup, every push to `main` publishes the new JavaScript to every installed phone. The app checks when it opens and when it comes back to the foreground, downloads the update in the background and asks "Restart now / Later". Data is untouched. Me → the line at the bottom shows the version and when it was last updated. Uses EAS Update (free Expo account).
+
+One-time setup:
+
+1. Make an account at expo.dev, then `npx eas-cli@latest login`.
+2. `npx eas-cli@latest update:configure`. It adds `extra.eas.projectId` and `updates.url` to `app.json` (the runtime version and the `production` channel are already set). Commit that.
+3. In the expo.dev dashboard, open the project, Environment variables, and add `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` for the `production` environment (they are the same values as in `.env`; published updates are built on Expo's servers and GitHub, which have no `.env`).
+4. Build the APK once: `npm run build`, then share it as before. It installs over the old app and keeps data (same package and signing key); this build is version 1.2.0.
+5. For automatic publishing, push the repo to GitHub, create a token at expo.dev/settings/access-tokens and add it as the repository secret `EXPO_TOKEN`. `.github/workflows/update.yml` then runs the type check and tests, and publishes. Without GitHub you can publish by hand: `npm run ship -- --message "what changed"`.
+
+Day to day: commit, push, wait a few minutes, open the app twice (or once and tap Restart). If the type check or tests fail, nothing is published.
+
+When a new APK is needed again: only when native code changes (a new native package, a new permission, an Expo SDK upgrade, a new app icon or splash). Then raise `version` in `app.json` (for example 1.3.0) and `android.versionCode`, build and share the APK once. Phones on the old APK keep working and only get updates published for their own version, so nobody gets code their build can't run.
+
+Rollback: `npx eas-cli@latest update:rollback` (or republish the last good commit).
+
 ## Updating the app without losing data
 
 Installing a new APK over the old one keeps everything (the database lives in the app's private storage). That only holds if:
